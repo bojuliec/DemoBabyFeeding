@@ -962,6 +962,8 @@ function getTodayLabel() {
 function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMarkTried, onUnmarkTried, setWeekPlan, ageMonths, startDate }) {
   const [swapToday, setSwapToday] = useState(false);
   const [swapDay, setSwapDay] = useState(null);
+  const [overviewTodaySearch, setOverviewTodaySearch] = useState("");
+  const [overviewDaySearch, setOverviewDaySearch] = useState("");
   const allergensDone = ALLERGEN_GROUPS.filter(g => { const gl = (logs||[]).filter(l => g.foods.includes(l.foodId)); return gl.length >= 2 && !gl.some(l => l.reaction); }).length;
   const allergensTotal = ALLERGEN_GROUPS.length;
   const todayDay = DAYS[TODAY_IDX];
@@ -1040,16 +1042,17 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
       </div>
 
       {swapToday && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => setSwapToday(false)}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setSwapToday(false); setOverviewTodaySearch(""); }}>
           <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:12 }}>Add Food to Today</div>
+            <input type="text" placeholder="Search foods..." value={overviewTodaySearch} onChange={e => setOverviewTodaySearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
             <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-              {FOODS.map(f => (
+              {FOODS.filter(f => f.name.toLowerCase().includes(overviewTodaySearch.toLowerCase())).map(f => (
                 <button key={f.id} onClick={() => { 
                   const currentFoods = weekPlan[todayDay] || [];
                   const foodsArray = Array.isArray(currentFoods) ? currentFoods : [currentFoods].filter(Boolean);
                   setWeekPlan(p => ({...p, [todayDay]: [...foodsArray, f]}));
-                  setSwapToday(false);
+                  setSwapToday(false); setOverviewTodaySearch("");
                 }}
                   style={{ background: triedFoods.includes(f.id) ? C.greenLight : f.allergen ? C.goldLight : C.slateLight, border:`1px solid ${triedFoods.includes(f.id) ? C.greenMid : f.allergen ? C.goldMid : C.slateMid}`, borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", color:C.charcoal }}>
                   {f.emoji} {f.name}
@@ -1088,16 +1091,17 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
       </div>
 
       {swapDay && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setSwapDay(null); setAddSearch(""); }}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setSwapDay(null); setOverviewDaySearch(""); }}>
           <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:12 }}>Add Food to {DAY_FULL[DAYS.indexOf(swapDay)]}</div>
+            <input type="text" placeholder="Search foods..." value={overviewDaySearch} onChange={e => setOverviewDaySearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
             <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-              {FOODS.map(f => (
+              {FOODS.filter(f => f.name.toLowerCase().includes(overviewDaySearch.toLowerCase())).map(f => (
                 <button key={f.id} onClick={() => { 
                   const currentFoods = weekPlan[swapDay] || [];
                   const foodsArray = Array.isArray(currentFoods) ? currentFoods : [currentFoods].filter(Boolean);
                   setWeekPlan(p => ({...p, [swapDay]: [...foodsArray, f]}));
-                  setSwapDay(null);
+                  setSwapDay(null); setOverviewDaySearch("");
                 }}
                   style={{ background: triedFoods.includes(f.id) ? C.greenLight : f.allergen ? C.goldLight : C.slateLight, border:`1px solid ${triedFoods.includes(f.id) ? C.greenMid : f.allergen ? C.goldMid : C.slateMid}`, borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", color:C.charcoal }}>
                   {f.emoji} {f.name}
@@ -1536,6 +1540,7 @@ export default function ShannonsSolids() {
   const [settings, setSettings] = useState({ babyName: "Shannon", babyBirthday: "2025-09-15", startDate: "2026-02-10" });
   const [weekPlan, setWeekPlan] = useState(() => buildDefaultPlan(["peanut"], 1));
   const [logTarget, setLogTarget] = useState(null);
+  const [quickLogSearch, setQuickLogSearch] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -1617,13 +1622,13 @@ export default function ShannonsSolids() {
       {/* Modals */}
       {logTarget && logTarget !== "quick" && <LogModal food={logTarget} onLog={handleLogFood} onClose={() => setLogTarget(null)} />}
       {logTarget === "quick" && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => setLogTarget(null)}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setLogTarget(null); setQuickLogSearch(""); }}>
           <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:12 }}>Log a Food</div>
-            <div style={{ fontSize:12, color:C.muted, marginBottom:16 }}>Select which food to log</div>
+            <input type="text" placeholder="Search foods..." value={quickLogSearch} onChange={e => setQuickLogSearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
             <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-              {FOODS.map(f => (
-                <button key={f.id} onClick={() => setLogTarget(f)}
+              {FOODS.filter(f => f.name.toLowerCase().includes(quickLogSearch.toLowerCase())).map(f => (
+                <button key={f.id} onClick={() => { setQuickLogSearch(""); setLogTarget(f); }}
                   style={{ background: triedFoods.includes(f.id) ? C.greenLight : f.allergen ? C.goldLight : C.slateLight, border:`1px solid ${triedFoods.includes(f.id) ? C.greenMid : f.allergen ? C.goldMid : C.slateMid}`, borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", color:C.charcoal }}>
                   {f.emoji} {f.name}
                 </button>
