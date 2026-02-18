@@ -1088,7 +1088,7 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
       </div>
 
       {swapDay && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => setSwapDay(null)}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setSwapDay(null); setAddSearch(""); }}>
           <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:12 }}>Add Food to {DAY_FULL[DAYS.indexOf(swapDay)]}</div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
@@ -1139,6 +1139,8 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
   const [swapDay, setSwapDay] = useState(null);
   const [swapFood, setSwapFood] = useState(null);
   const [showSSRef, setShowSSRef] = useState(false);
+  const [addSearch, setAddSearch] = useState("");
+  const [swapSearch, setSwapSearch] = useState("");
 
   const handleDeleteFood = (day, foodToDelete) => {
     setWeekPlan(p => ({ ...p, [day]: p[day].filter(f => f.id !== foodToDelete.id) }));
@@ -1261,13 +1263,14 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
               <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => setSwapDay(null)}>
                 <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
                   <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:12 }}>Add Food to {DAY_FULL[i]}</div>
+                  <input type="text" placeholder="Search foods..." value={addSearch} onChange={e => setAddSearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
                   <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-                    {FOODS.map(f => (
+                    {FOODS.filter(f => f.name.toLowerCase().includes(addSearch.toLowerCase())).map(f => (
                       <button key={f.id} onClick={() => { 
                         const currentFoods = weekPlan[d] || [];
                         const foodsArray = Array.isArray(currentFoods) ? currentFoods : [currentFoods].filter(Boolean);
                         setWeekPlan(p => ({...p, [d]: [...foodsArray, f]}));
-                        setSwapDay(null);
+                        setSwapDay(null); setAddSearch("");
                       }}
                         style={{ background: triedFoods.includes(f.id) ? C.greenLight : f.allergen ? C.goldLight : C.slateLight, border:`1px solid ${triedFoods.includes(f.id) ? C.greenMid : f.allergen ? C.goldMid : C.slateMid}`, borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", color:C.charcoal }}>
                         {f.emoji} {f.name}
@@ -1283,15 +1286,16 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
 
       {/* Swap food modal */}
       {swapFood && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => setSwapFood(null)}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setSwapFood(null); setSwapSearch(""); }}>
           <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:4 }}>Swap Food</div>
-            <div style={{ fontSize:12, color:C.muted, marginBottom:16 }}>Currently: {swapFood.food.emoji} {swapFood.food.name}</div>
+            <div style={{ fontSize:12, color:C.muted, marginBottom:12 }}>Currently: {swapFood.food.emoji} {swapFood.food.name}</div>
+            <input type="text" placeholder="Search foods..." value={swapSearch} onChange={e => setSwapSearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
             <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-              {FOODS.map(f => (
+              {FOODS.filter(f => f.name.toLowerCase().includes(swapSearch.toLowerCase())).map(f => (
                 <button key={f.id} onClick={() => { 
                   handleSwapFood(swapFood.day, swapFood.food, f);
-                  setSwapFood(null);
+                  setSwapFood(null); setSwapSearch("");
                 }}
                   style={{ background: triedFoods.includes(f.id) ? C.greenLight : f.allergen ? C.goldLight : C.slateLight, border:`1px solid ${triedFoods.includes(f.id) ? C.greenMid : f.allergen ? C.goldMid : C.slateMid}`, borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", color:C.charcoal }}>
                   {f.emoji} {f.name}
@@ -1306,7 +1310,7 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
 }
 
 // Library tab
-function LibraryTab({ triedFoods, onToggle }) {
+function LibraryTab({ triedFoods, logs, onToggle }) {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const allergensDone = ALLERGEN_GROUPS.filter(g => { const gl = (logs||[]).filter(l => g.foods.includes(l.foodId)); return gl.length >= 2 && !gl.some(l => l.reaction); }).length;
@@ -1606,7 +1610,7 @@ export default function ShannonsSolids() {
       <div style={{ padding:"16px 14px 0" }}>
         {tab==="overview"  && <OverviewTab  triedFoods={triedFoods} logs={logs} weekPlan={weekPlan} onLogFood={handleLogFood} onCreatePlan={handleCreatePlan} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} setWeekPlan={setWeekPlan} ageMonths={ageMonths} startDate={settings.startDate} />}
         {tab==="weekly"    && <WeeklyTab    triedFoods={triedFoods} weekPlan={weekPlan} setWeekPlan={setWeekPlan} onLogFood={handleLogFood} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} onCreatePlan={handleCreatePlan} ageMonths={ageMonths} currentWeek={currentWeek} />}
-        {tab==="library"   && <LibraryTab   triedFoods={triedFoods} onToggle={handleToggle} />}
+        {tab==="library"   && <LibraryTab   triedFoods={triedFoods} logs={logs} onToggle={handleToggle} />}
         {tab==="allergens" && <AllergensTab triedFoods={triedFoods} logs={logs} onToggle={handleToggle} onLogFood={handleLogFood} />}
       </div>
 
