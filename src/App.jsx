@@ -1899,12 +1899,14 @@ function AppInner() {
               <div style={{ color:"#90A8C0", fontSize:11 }}>Week {currentWeek} · {ageMonths} months old</div>
             </div>
           </div>
-          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4 }}>
             <div style={{ fontSize:10, fontWeight:600, color: saveStatus === "saving" ? "#90A8C0" : "#5CB88A" }}>
-              {saveStatus === "saving" ? "syncing..." : "synced"}
+              {saveStatus === "saving" ? "Syncing..." : "Synced"}
             </div>
-            <button onClick={() => setLogTarget("quick")} style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:10, padding:"7px 13px", color:C.white, fontSize:12, fontWeight:700, cursor:"pointer" }}>+ Log</button>
-            <button onClick={() => setShowSettings(true)} style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:10, padding:"7px 10px", color:C.white, fontSize:16, cursor:"pointer" }}>⚙️</button>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setLogTarget("quick")} style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:10, padding:"7px 13px", color:C.white, fontSize:12, fontWeight:700, cursor:"pointer" }}>+ Log</button>
+              <button onClick={() => setShowSettings(true)} style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:10, padding:"7px 10px", color:C.white, fontSize:16, cursor:"pointer" }}>⚙️</button>
+            </div>
           </div>
         </div>
       </div>
