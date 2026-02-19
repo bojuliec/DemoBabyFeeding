@@ -1025,20 +1025,19 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
             return (
             <div key={todayFood.id + "-" + idx} style={{ padding:14, borderBottom: idx < foodsArray.length - 1 ? "1px solid " + C.border : "none", borderTop: isAllergenFirstIntro ? "2px solid " + C.goldMid : undefined }}>
               {isAllergenFirstIntro && <div style={{ fontSize:11, fontWeight:700, color:"#7A5C00", background:C.goldLight, padding:"5px 14px", margin:"-14px -14px 12px -14px" }}>First introduction — watch for reactions for 2 hours</div>}
-              <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:10 }}>
-                <div style={{ fontSize:44, lineHeight:1, flexShrink:0 }}>{todayFood.emoji}</div>
-                <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
-                  <span style={{ fontWeight:800, fontSize:16, color:C.charcoal, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{todayFood.name}</span>
+              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+                <div style={{ fontSize:36, lineHeight:1, flexShrink:0 }}>{todayFood.emoji}</div>
+                <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0, flex:1 }}>
+                  <span style={{ fontWeight:800, fontSize:13, color:C.charcoal, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", minWidth:0 }}>{todayFood.name}</span>
                   {todayFood.allergen && <span style={{ background:C.goldLight, border:"1px solid " + C.goldMid, borderRadius:6, fontSize:10, fontWeight:700, color:C.gold, padding:"2px 6px", flexShrink:0 }}>⚠</span>}
                   {triedFoods.includes(todayFood.id)
                     ? <button onClick={() => onUndoTried(todayFood)} style={{ background:C.greenLight, border:"1px solid " + C.greenMid, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:C.green, cursor:"pointer", flexShrink:0 }}>✓ Tried</button>
                     : <button onClick={() => onMarkTried(todayFood)} style={{ background:C.slateLight, border:"1px solid " + C.slateMid, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:C.slate, cursor:"pointer", flexShrink:0 }}>Not Tried</button>
                   }
                 </div>
-                <div style={{ flex:1 }} />
                 <button onClick={() => onLogFood(todayFood)} style={{ background:C.blue, border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer", lineHeight:1, flexShrink:0, color:C.white, fontWeight:700 }}>Log</button>
-                <button onClick={() => { setSwapTodayFood(todayFood); setOverviewTodaySearch(""); }} style={{ background:C.white, border:"1px solid " + C.slateMid, borderRadius:6, padding:"4px 8px", fontSize:14, cursor:"pointer", lineHeight:1, flexShrink:0 }}>🔄</button>
-                <button onClick={() => setConfirmDeleteToday(todayFood)} style={{ background:"transparent", border:"1px solid " + C.redMid, borderRadius:6, fontSize:14, color:C.red, cursor:"pointer", padding:"4px 8px", lineHeight:1, flexShrink:0 }}>🗑️</button>
+                <button onClick={() => { setSwapTodayFood(todayFood); setOverviewTodaySearch(""); }} style={{ background:C.white, border:"1px solid " + C.slateMid, borderRadius:6, padding:"4px 8px", fontSize:13, cursor:"pointer", lineHeight:1, flexShrink:0 }}>🔄</button>
+                <button onClick={() => setConfirmDeleteToday(todayFood)} style={{ background:"transparent", border:"1px solid " + C.redMid, borderRadius:6, fontSize:13, color:C.red, cursor:"pointer", padding:"4px 8px", lineHeight:1, flexShrink:0 }}>🗑️</button>
               </div>
               <div style={{ background:"#FFF8EE", borderRadius:10, padding:"10px 12px", border:"1px solid #F5D87A" }}>
                 <div style={{ fontSize:10, fontWeight:800, color:"#7A5C00", marginBottom:4, letterSpacing:"0.4px" }}>HOW TO SERVE · {ageMonths} MONTHS</div>
@@ -1352,19 +1351,18 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
                 <div key={`${food.id}-${idx}`} style={{ padding:"12px 14px", borderBottom: idx < foods.length - 1 ? `1px solid ${C.border}` : 'none' }}>
                   {/* Name row: emoji | name + allergen + tried/mark-button | spacer | + log | swap | delete */}
                   <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
-                    <div style={{ fontSize:36, lineHeight:1, flexShrink:0 }}>{food.emoji}</div>
-                    <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
-                      <span style={{ fontWeight:800, fontSize:15, color:C.charcoal, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{food.name}</span>
+                    <div style={{ fontSize:32, lineHeight:1, flexShrink:0 }}>{food.emoji}</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0, flex:1 }}>
+                      <span style={{ fontWeight:800, fontSize:13, color:C.charcoal, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", minWidth:0 }}>{food.name}</span>
                       {food.allergen && <span style={{ background:C.goldLight, border:`1px solid ${C.goldMid}`, borderRadius:6, fontSize:10, fontWeight:700, color:C.gold, padding:"1px 6px", flexShrink:0 }}>⚠</span>}
                       {tried
                         ? <button onClick={() => onUndoTried(food)} style={{ background:C.greenLight, border:`1px solid ${C.greenMid}`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:C.green, cursor:"pointer", flexShrink:0 }}>✓ Tried</button>
                         : <button onClick={() => onMarkTried(food)} style={{ background:C.slateLight, border:`1px solid ${C.slateMid}`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:C.slate, cursor:"pointer", flexShrink:0 }}>Not Tried</button>
                       }
                     </div>
-                    <div style={{ flex:1 }} />
                     <button onClick={() => onLogFood(food)} style={{ background:C.blue, border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer", lineHeight:1, flexShrink:0, color:C.white, fontWeight:700 }}>Log</button>
-                    <button onClick={() => { setSwapFood({ day: d, food }); setSwapSearch(""); }} style={{ background:C.white, border:`1px solid ${C.slateMid}`, borderRadius:6, padding:"4px 8px", fontSize:14, cursor:"pointer", lineHeight:1, flexShrink:0 }}>🔄</button>
-                    <button onClick={() => handleDeleteFood(d, food, idx)} style={{ background:"transparent", border:`1px solid ${C.redMid}`, borderRadius:6, fontSize:14, color:C.red, cursor:"pointer", padding:"4px 8px", lineHeight:1, flexShrink:0 }}>🗑️</button>
+                    <button onClick={() => { setSwapFood({ day: d, food }); setSwapSearch(""); }} style={{ background:C.white, border:`1px solid ${C.slateMid}`, borderRadius:6, padding:"4px 8px", fontSize:13, cursor:"pointer", lineHeight:1, flexShrink:0 }}>🔄</button>
+                    <button onClick={() => handleDeleteFood(d, food, idx)} style={{ background:"transparent", border:`1px solid ${C.redMid}`, borderRadius:6, fontSize:13, color:C.red, cursor:"pointer", padding:"4px 8px", lineHeight:1, flexShrink:0 }}>🗑️</button>
                   </div>
                   <div style={{ background:"#FFF8EE", borderRadius:10, padding:"10px 12px", border:`1px solid #F5D87A` }}>
                     <div style={{ fontSize:10, fontWeight:800, color:"#7A5C00", marginBottom:4, letterSpacing:"0.4px" }}>HOW TO SERVE · {ageMonths} MONTHS</div>
