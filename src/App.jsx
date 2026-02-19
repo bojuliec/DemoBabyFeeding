@@ -1111,9 +1111,8 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
 
       {/* This Week */}
       <div style={{ background:C.white, borderRadius:14, border:`1px solid ${C.border}`, marginBottom:14 }}>
-        <div style={{ padding:"12px 14px 8px", borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ padding:"12px 14px 8px", borderBottom:`1px solid ${C.border}` }}>
           <div style={{ fontWeight:700, fontSize:13, color:C.slateDark }}>This Week · {getWeekDateRange(startDate)}</div>
-          <button onClick={onCreatePlan} style={{ background:C.blue, border:"none", borderRadius:8, color:C.white, fontSize:11, fontWeight:700, padding:"4px 10px", cursor:"pointer" }}>✦ Build Plan</button>
         </div>
         <div style={{ display:"flex", padding:"10px 14px", gap:8, overflowX:"auto" }}>
           {DAYS.map((d,i) => {
