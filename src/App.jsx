@@ -744,77 +744,78 @@ function getAgeInMonths(birthday) {
   return Math.max(4, months);
 }
 
-// Storage helpers — localStorage for deployed app
-function loadData() {
+// ─── Supabase config — replace these two values with your own ───────────────
+const SUPABASE_URL = "https://wmleqsmbpwymmbetqjxe.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndtbGVxc21icHd5bW1iZXRxanhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NzIyNDEsImV4cCI6MjA4NzA0ODI0MX0.1h3VSXmNyCqxfcjMKKCSvEbmYmJUGLzYDMJkvAIoOlk";
+const DATA_KEY = "shannon_family"; // shared row key — same for both phones
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DEFAULT_DATA = {
+  triedFoods: ["peanut"],
+  logs: [
+    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"First try! No reaction.", date:"2026-02-10" },
+    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"Second exposure going well.", date:"2026-02-12" }
+  ],
+  settings: { babyName:"Shannon", babyBirthday:"2025-09-15", startDate:"2026-02-10" },
+  weekPlan: null, // built on first load
+};
+
+async function loadData() {
   try {
-    const triedRaw    = localStorage.getItem('shannon-tried-foods');
-    const logsRaw     = localStorage.getItem('shannon-logs');
-    const planRaw     = localStorage.getItem('shannon-week-plan');
-    const settingsRaw = localStorage.getItem('shannon-settings');
-
-    const settings = settingsRaw ? JSON.parse(settingsRaw) : {
-      babyName: "Shannon",
-      babyBirthday: "2025-09-15",
-      startDate: "2026-02-10",
-    };
-
-    const defaultLogs = logsRaw ? JSON.parse(logsRaw) : [
-      { foodId:"peanut", foodName:"Peanut", reaction:false, note:"First try! No reaction.", date:"2/10/2026" },
-      { foodId:"peanut", foodName:"Peanut", reaction:false, note:"Second exposure going well.", date:"2/12/2026" }
-    ];
-
-    let weekPlan = planRaw ? JSON.parse(planRaw) : null;
-    if (!weekPlan) {
-      weekPlan = buildDefaultPlan(["peanut"], getCurrentWeek(settings.startDate));
-    } else {
-      const convertedPlan = {};
-      Object.keys(weekPlan).forEach(day => {
-        const dayValue = weekPlan[day];
-        if (Array.isArray(dayValue)) {
-          convertedPlan[day] = dayValue;
-        } else if (dayValue) {
-          convertedPlan[day] = [dayValue];
-        } else {
-          convertedPlan[day] = [];
-        }
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/app_data?key=eq.${DATA_KEY}&select=value`,
+      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
+    );
+    if (!res.ok) throw new Error(`Supabase fetch failed: ${res.status}`);
+    const rows = await res.json();
+    if (!rows || rows.length === 0) return buildDefaults();
+    const data = rows[0].value;
+    // Normalise weekPlan day values to always be arrays
+    if (data.weekPlan) {
+      Object.keys(data.weekPlan).forEach(day => {
+        const v = data.weekPlan[day];
+        if (!Array.isArray(v)) data.weekPlan[day] = v ? [v] : [];
       });
-      weekPlan = convertedPlan;
+    } else {
+      data.weekPlan = buildDefaultPlan(data.triedFoods || [], getCurrentWeek(data.settings?.startDate || DEFAULT_DATA.settings.startDate));
     }
-
-    return {
-      triedFoods: triedRaw ? JSON.parse(triedRaw) : ["peanut"],
-      logs: defaultLogs,
-      weekPlan,
-      settings
-    };
-  } catch (error) {
-    console.log('Data not found, using defaults:', error);
-    const defaultSettings = {
-      babyName: "Shannon",
-      babyBirthday: "2025-09-15",
-      startDate: "2026-02-10",
-    };
-    return {
-      triedFoods: ["peanut"],
-      logs: [
-        { foodId:"peanut", foodName:"Peanut", reaction:false, note:"First try! No reaction.", date:"2/10/2026" },
-        { foodId:"peanut", foodName:"Peanut", reaction:false, note:"Second exposure going well.", date:"2/12/2026" }
-      ],
-      weekPlan: buildDefaultPlan(["peanut"], 1),
-      settings: defaultSettings
-    };
+    return { ...DEFAULT_DATA, ...data };
+  } catch (err) {
+    console.error("loadData error:", err);
+    return buildDefaults();
   }
 }
 
-function saveData(triedFoods, logs, weekPlan, settings) {
-  try {
-    localStorage.setItem('shannon-tried-foods', JSON.stringify(triedFoods));
-    localStorage.setItem('shannon-logs',         JSON.stringify(logs));
-    localStorage.setItem('shannon-week-plan',    JSON.stringify(weekPlan));
-    localStorage.setItem('shannon-settings',     JSON.stringify(settings));
-  } catch (error) {
-    console.error('Failed to save data:', error);
-  }
+function buildDefaults() {
+  return {
+    ...DEFAULT_DATA,
+    weekPlan: buildDefaultPlan(DEFAULT_DATA.triedFoods, getCurrentWeek(DEFAULT_DATA.settings.startDate))
+  };
+}
+
+// Debounce saves — waits 800ms after last change before writing to Supabase
+// Upsert: inserts the row if it doesn't exist, updates it if it does
+let _saveTimer = null;
+function saveData(triedFoods, logs, weekPlan, settings, onSaved) {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async () => {
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/app_data`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates,return=minimal",
+        },
+        body: JSON.stringify({ key: DATA_KEY, value: { triedFoods, logs, weekPlan, settings } }),
+      });
+      onSaved && onSaved();
+    } catch (err) {
+      console.error("saveData error:", err);
+      onSaved && onSaved();
+    }
+  }, 800);
 }
 
 // Food swap modal
@@ -959,19 +960,22 @@ function getTodayLabel() {
 }
 
 // Overview tab
-function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMarkTried, onUnmarkTried, setWeekPlan, ageMonths, startDate }) {
-  const [swapToday, setSwapToday] = useState(false);
+function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMarkTried, onUnmarkTried, onUndoTried, setWeekPlan, ageMonths, startDate, currentWeek }) {
+  const [swapTodayFood, setSwapTodayFood] = useState(null);
+  const [addToToday, setAddToToday] = useState(false);
   const [swapDay, setSwapDay] = useState(null);
   const [overviewTodaySearch, setOverviewTodaySearch] = useState("");
   const [overviewDaySearch, setOverviewDaySearch] = useState("");
-  const allergensDone = ALLERGEN_GROUPS.filter(g => { const gl = (logs||[]).filter(l => g.foods.includes(l.foodId)); return gl.length >= 2 && !gl.some(l => l.reaction); }).length;
+  const [confirmDeleteToday, setConfirmDeleteToday] = useState(null); // food object
+  const allergensDone = ALLERGEN_GROUPS.filter(g => { const gl = (logs||[]).filter(l => g.foods.includes(l.foodId) && !l.reaction); const dDates = new Set(gl.map(l => l.date)).size; return dDates >= 2; }).length;
   const allergensTotal = ALLERGEN_GROUPS.length;
   const todayDay = DAYS[TODAY_IDX];
   const todayFood = weekPlan[todayDay];
   const getGroupCleared = (group) => {
     const groupLogs = (logs || []).filter(l => group.foods.includes(l.foodId));
-    const hasReaction = groupLogs.some(l => l.reaction);
-    return !hasReaction && groupLogs.length >= 2;
+    const nonReactionLogs = groupLogs.filter(l => !l.reaction);
+    const distinctDates = new Set(nonReactionLogs.map(l => l.date)).size;
+    return distinctDates >= 2;
   };
   const nextAllergens = ALLERGEN_GROUPS.filter(g => !getGroupCleared(g)).slice(0, 3);
 
@@ -987,8 +991,8 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
       <div style={{ display:"flex", gap:10, marginBottom:16 }}>
         {[
           { label:"Foods Tried", value: triedFoods.length, color: C.green },
-          { label:"Allergens Cleared", value: allergensDone, color: C.gold },
-          { label:"Allergens Left", value: allergensTotal - allergensDone, color: C.slate },
+          { label:"Allergens Cleared", value: allergensDone + "/" + allergensTotal, color: C.gold },
+          { label:"Protocol Week", value: Math.min(currentWeek,15) + "/15", color: C.slate },
         ].map(s => (
           <div key={s.label} style={{ flex:1, background:C.white, borderRadius:12, border:`1px solid ${C.border}`, padding:"12px 10px", textAlign:"center" }}>
             <div style={{ fontSize:22, fontWeight:800, color:s.color }}>{s.value}</div>
@@ -1001,7 +1005,7 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
       <div style={{ background:C.white, borderRadius:14, border:`1px solid ${C.border}`, marginBottom:14, overflow:"hidden" }}>
         <div style={{ background:C.slateDark, padding:"10px 14px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <div style={{ color:C.white, fontWeight:700, fontSize:13 }}>Today · {getTodayLabel()}</div>
-          <button onClick={() => setSwapToday(true)} style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:8, color:C.white, fontSize:11, fontWeight:700, padding:"4px 10px", cursor:"pointer" }}>Swap</button>
+          <button onClick={() => { setAddToToday(true); setOverviewTodaySearch(""); }} style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:8, color:C.white, fontSize:11, fontWeight:700, padding:"4px 10px", cursor:"pointer" }}>+ Add Food</button>
         </div>
         {(() => {
           const todayFoods = weekPlan[todayDay] || [];
@@ -1015,49 +1019,88 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
             );
           }
           
-          return foodsArray.map((todayFood, idx) => (
-            <div key={`${todayFood.id}-${idx}`} style={{ padding:14, borderBottom: idx < foodsArray.length - 1 ? `1px solid ${C.border}` : 'none' }}>
-              <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:10 }}>
-                <div style={{ fontSize:48, lineHeight:1 }}>{todayFood.emoji}</div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontWeight:800, fontSize:16, color:C.charcoal }}>{todayFood.name}</div>
-                  {todayFood.allergen && <div style={{ marginTop:4, display:"inline-block", background:C.goldLight, border:`1px solid ${C.goldMid}`, borderRadius:6, fontSize:10, fontWeight:700, color:C.gold, padding:"2px 8px" }}>⚠ Allergen</div>}
+          return foodsArray.map((todayFood, idx) => {
+            const todayFoodLogs = (logs||[]).filter(l => l.foodId === todayFood.id && !l.reaction);
+            const isAllergenFirstIntro = todayFood.allergen && todayFoodLogs.length === 0;
+            return (
+            <div key={todayFood.id + "-" + idx} style={{ padding:14, borderBottom: idx < foodsArray.length - 1 ? "1px solid " + C.border : "none", borderTop: isAllergenFirstIntro ? "2px solid " + C.goldMid : undefined }}>
+              {isAllergenFirstIntro && <div style={{ fontSize:11, fontWeight:700, color:"#7A5C00", background:C.goldLight, padding:"5px 14px", margin:"-14px -14px 12px -14px" }}>First introduction — watch for reactions for 2 hours</div>}
+              <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:10 }}>
+                <div style={{ fontSize:44, lineHeight:1, flexShrink:0 }}>{todayFood.emoji}</div>
+                <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
+                  <span style={{ fontWeight:800, fontSize:16, color:C.charcoal, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{todayFood.name}</span>
+                  {todayFood.allergen && <span style={{ background:C.goldLight, border:"1px solid " + C.goldMid, borderRadius:6, fontSize:10, fontWeight:700, color:C.gold, padding:"2px 6px", flexShrink:0 }}>⚠</span>}
+                  {triedFoods.includes(todayFood.id)
+                    ? <button onClick={() => onUndoTried(todayFood)} style={{ background:C.greenLight, border:"1px solid " + C.greenMid, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:C.green, cursor:"pointer", flexShrink:0 }}>✓ Tried</button>
+                    : <button onClick={() => onMarkTried(todayFood)} style={{ background:C.slateLight, border:"1px solid " + C.slateMid, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:C.slate, cursor:"pointer", flexShrink:0 }}>Not Tried</button>
+                  }
                 </div>
-                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                  {triedFoods.includes(todayFood.id) ? (
-                    <button onClick={() => onUnmarkTried(todayFood.id)} style={{ background:C.greenLight, border:`1px solid ${C.greenMid}`, borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:700, color:C.green, cursor:"pointer" }}>✓ Tried</button>
-                  ) : (
-                    <button onClick={() => onMarkTried(todayFood.id)} style={{ background:C.white, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:700, color:C.slate, cursor:"pointer" }}>Mark Tried</button>
-                  )}
-                  <button onClick={() => onLogFood(todayFood)} style={{ background:C.blue, border:"none", borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:700, color:C.white, cursor:"pointer" }}>Log</button>
-                </div>
+                <div style={{ flex:1 }} />
+                <button onClick={() => onLogFood(todayFood)} style={{ background:C.blue, border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer", lineHeight:1, flexShrink:0, color:C.white, fontWeight:700 }}>Log</button>
+                <button onClick={() => { setSwapTodayFood(todayFood); setOverviewTodaySearch(""); }} style={{ background:C.white, border:"1px solid " + C.slateMid, borderRadius:6, padding:"4px 8px", fontSize:14, cursor:"pointer", lineHeight:1, flexShrink:0 }}>🔄</button>
+                <button onClick={() => setConfirmDeleteToday(todayFood)} style={{ background:"transparent", border:"1px solid " + C.redMid, borderRadius:6, fontSize:14, color:C.red, cursor:"pointer", padding:"4px 8px", lineHeight:1, flexShrink:0 }}>🗑️</button>
               </div>
-              <div style={{ background:C.slateLight, borderRadius:10, padding:"10px 12px", border:`1px solid ${C.slateMid}` }}>
-                <div style={{ fontSize:10, fontWeight:700, color:C.muted, marginBottom:4 }}>HOW TO SERVE ({ageMonths} MONTHS)</div>
-                <div style={{ fontSize:12, color:C.charcoal, lineHeight:1.4 }}>{getServingSuggestion(todayFood.id, ageMonths)}</div>
+              <div style={{ background:"#FFF8EE", borderRadius:10, padding:"10px 12px", border:"1px solid #F5D87A" }}>
+                <div style={{ fontSize:10, fontWeight:800, color:"#7A5C00", marginBottom:4, letterSpacing:"0.4px" }}>HOW TO SERVE · {ageMonths} MONTHS</div>
+                <div style={{ fontSize:12, color:C.charcoal, lineHeight:1.5 }}>{getServingSuggestion(todayFood.id, ageMonths)}</div>
               </div>
             </div>
-          ));
+            );
+          });
         })()}
       </div>
 
-      {swapToday && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setSwapToday(false); setOverviewTodaySearch(""); }}>
+      {/* Add food to today panel */}
+      {addToToday && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setAddToToday(false); setOverviewTodaySearch(""); }}>
           <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:12 }}>Add Food to Today</div>
             <input type="text" placeholder="Search foods..." value={overviewTodaySearch} onChange={e => setOverviewTodaySearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
             <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
               {FOODS.filter(f => f.name.toLowerCase().includes(overviewTodaySearch.toLowerCase())).map(f => (
-                <button key={f.id} onClick={() => { 
-                  const currentFoods = weekPlan[todayDay] || [];
-                  const foodsArray = Array.isArray(currentFoods) ? currentFoods : [currentFoods].filter(Boolean);
-                  setWeekPlan(p => ({...p, [todayDay]: [...foodsArray, f]}));
-                  setSwapToday(false); setOverviewTodaySearch("");
-                }}
-                  style={{ background: triedFoods.includes(f.id) ? C.greenLight : f.allergen ? C.goldLight : C.slateLight, border:`1px solid ${triedFoods.includes(f.id) ? C.greenMid : f.allergen ? C.goldMid : C.slateMid}`, borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", color:C.charcoal }}>
+                <button key={f.id} onClick={() => {
+                  const cur = Array.isArray(weekPlan[todayDay]) ? weekPlan[todayDay] : [weekPlan[todayDay]].filter(Boolean);
+                  setWeekPlan(p => ({...p, [todayDay]: [...cur, f]}));
+                  setAddToToday(false); setOverviewTodaySearch("");
+                }} style={{ background: triedFoods.includes(f.id) ? C.greenLight : f.allergen ? C.goldLight : C.slateLight, border:`1px solid ${triedFoods.includes(f.id) ? C.greenMid : f.allergen ? C.goldMid : C.slateMid}`, borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", color:C.charcoal }}>
                   {f.emoji} {f.name}
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Swap food in today panel */}
+      {swapTodayFood && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setSwapTodayFood(null); setOverviewTodaySearch(""); }}>
+          <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:4 }}>Swap Food</div>
+            <div style={{ fontSize:12, color:C.muted, marginBottom:12 }}>Currently: {swapTodayFood.emoji} {swapTodayFood.name}</div>
+            <input type="text" placeholder="Search foods..." value={overviewTodaySearch} onChange={e => setOverviewTodaySearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+              {FOODS.filter(f => f.name.toLowerCase().includes(overviewTodaySearch.toLowerCase())).map(f => (
+                <button key={f.id} onClick={() => {
+                  setWeekPlan(p => ({...p, [todayDay]: (p[todayDay]||[]).map(x => x.id === swapTodayFood.id ? f : x)}));
+                  setSwapTodayFood(null); setOverviewTodaySearch("");
+                }} style={{ background: triedFoods.includes(f.id) ? C.greenLight : f.allergen ? C.goldLight : C.slateLight, border:`1px solid ${triedFoods.includes(f.id) ? C.greenMid : f.allergen ? C.goldMid : C.slateMid}`, borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", color:C.charcoal }}>
+                  {f.emoji} {f.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm delete today food */}
+      {confirmDeleteToday && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300, padding:24 }} onClick={() => setConfirmDeleteToday(null)}>
+          <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:380 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:8 }}>Remove {confirmDeleteToday.name}?</div>
+            <div style={{ fontSize:13, color:C.muted, marginBottom:20 }}>This removes it from today's plan. Log history won't be affected.</div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={() => setConfirmDeleteToday(null)} style={{ flex:1, background:C.slateLight, border:`1px solid ${C.slateMid}`, borderRadius:10, padding:"11px 0", fontWeight:700, color:C.slateDark, cursor:"pointer" }}>Cancel</button>
+              <button onClick={() => { setWeekPlan(p => ({...p, [todayDay]: (p[todayDay]||[]).filter(f => f.id !== confirmDeleteToday.id)})); setConfirmDeleteToday(null); }} style={{ flex:1, background:C.red, border:"none", borderRadius:10, padding:"11px 0", fontWeight:700, color:C.white, cursor:"pointer" }}>Remove</button>
             </div>
           </div>
         </div>
@@ -1112,42 +1155,104 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
         </div>
       )}
 
-      {/* Next Allergens */}
-      <div style={{ background:C.white, borderRadius:14, border:`1px solid ${C.border}`, marginBottom:14 }}>
-        <div style={{ padding:"12px 14px 8px", borderBottom:`1px solid ${C.border}` }}>
-          <div style={{ fontWeight:700, fontSize:13, color:C.slateDark }}>Next Allergens to Introduce</div>
-        </div>
-        <div style={{ padding:"10px 14px", display:"flex", flexDirection:"column", gap:8 }}>
-          {nextAllergens.length === 0 ? (
-            <div style={{ color:C.green, fontWeight:700, padding:"8px 0" }}>🎉 All allergen groups cleared!</div>
-          ) : nextAllergens.map(g => {
-            const exposures = (logs || []).filter(l => g.foods.includes(l.foodId)).length;
-            return (
-              <div key={g.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"8px 10px", background:C.goldLight, border:`1px solid ${C.goldMid}`, borderRadius:10 }}>
-                <div style={{ fontSize:28 }}>{g.emoji}</div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontWeight:700, fontSize:13, color:C.charcoal }}>{g.name}</div>
-                  <div style={{ fontSize:10, color:C.muted }}>Recommended: {g.timeline} · {exposures}/2 exposures</div>
+      {/* Allergen Action Items */}
+      {(() => {
+        const today = new Date();
+        const todayISO = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+        const parseD = (d) => { try { const [y,m,dy] = d.split('-').map(Number); return new Date(y,m-1,dy); } catch(e) { return new Date(d); }};
+        
+        // Cleared allergens where last log > 3 days ago (need maintenance)
+        const needsMaintenance = ALLERGEN_GROUPS.filter(g => {
+          const nonReactionLogs = (logs||[]).filter(l => g.foods.includes(l.foodId) && !l.reaction);
+          const distinctDates = new Set(nonReactionLogs.map(l => l.date)).size;
+          if (distinctDates < 2) return false;
+          const sorted = [...nonReactionLogs].sort((a,b) => parseD(b.date) - parseD(a.date));
+          const daysSince = Math.floor((parseD(todayISO) - parseD(sorted[0].date)) / 86400000);
+          return daysSince > 3;
+        });
+
+        // Not-yet-cleared allergens (need introduction or more exposures)
+        const notCleared = ALLERGEN_GROUPS.filter(g => {
+          const nonReactionLogs = (logs||[]).filter(l => g.foods.includes(l.foodId) && !l.reaction);
+          return new Set(nonReactionLogs.map(l => l.date)).size < 2;
+        }).slice(0, 3);
+
+        return (
+          <>
+            {needsMaintenance.length > 0 && (
+              <div style={{ background:C.white, borderRadius:14, border:`2px solid ${C.redMid}`, marginBottom:14 }}>
+                <div style={{ padding:"10px 14px 8px", borderBottom:`1px solid ${C.border}` }}>
+                  <div style={{ fontWeight:700, fontSize:13, color:C.red }}>Allergens Overdue for Dose</div>
+                  <div style={{ fontSize:11, color:C.muted }}>Cleared allergens need 2+ exposures per week to maintain tolerance</div>
+                </div>
+                <div style={{ padding:"10px 14px", display:"flex", flexDirection:"column", gap:8 }}>
+                  {needsMaintenance.map(g => {
+                    const nonReactionLogs = (logs||[]).filter(l => g.foods.includes(l.foodId) && !l.reaction);
+                    const sorted = [...nonReactionLogs].sort((a,b) => parseD(b.date) - parseD(a.date));
+                    const daysSince = Math.floor((parseD(todayISO) - parseD(sorted[0].date)) / 86400000);
+                    return (
+                      <div key={g.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", background:C.redLight, border:`1px solid ${C.redMid}`, borderRadius:10 }}>
+                        <div style={{ fontSize:24 }}>{g.emoji}</div>
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontWeight:700, fontSize:13, color:C.charcoal }}>{g.name}</div>
+                          <div style={{ fontSize:11, color:C.red, fontWeight:600 }}>Last given {daysSince} day{daysSince !== 1 ? 's' : ''} ago</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            );
-          })}
-        </div>
-      </div>
+            )}
+            {notCleared.length > 0 && (
+              <div style={{ background:C.white, borderRadius:14, border:`1px solid ${C.border}`, marginBottom:14 }}>
+                <div style={{ padding:"10px 14px 8px", borderBottom:`1px solid ${C.border}` }}>
+                  <div style={{ fontWeight:700, fontSize:13, color:C.slateDark }}>Next Allergens to Introduce</div>
+                </div>
+                <div style={{ padding:"10px 14px", display:"flex", flexDirection:"column", gap:8 }}>
+                  {notCleared.map(g => {
+                    const nonReactionLogs = (logs||[]).filter(l => g.foods.includes(l.foodId) && !l.reaction);
+                    const distinctDates = new Set(nonReactionLogs.map(l => l.date)).size;
+                    return (
+                      <div key={g.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", background:C.goldLight, border:`1px solid ${C.goldMid}`, borderRadius:10 }}>
+                        <div style={{ fontSize:24 }}>{g.emoji}</div>
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontWeight:700, fontSize:13, color:C.charcoal }}>{g.name}</div>
+                          <div style={{ fontSize:11, color:C.muted }}>{g.timeline} · {distinctDates}/2 exposures on separate days</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {needsMaintenance.length === 0 && notCleared.length === 0 && (
+              <div style={{ background:C.white, borderRadius:14, border:`1px solid ${C.greenMid}`, padding:"14px", marginBottom:14, textAlign:"center" }}>
+                <div style={{ fontWeight:700, color:C.green, fontSize:13 }}>All allergens on track</div>
+              </div>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
 
 // Weekly/Plan tab
-function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, onUnmarkTried, onCreatePlan, ageMonths, currentWeek }) {
+function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, onUnmarkTried, onUndoTried, onCreatePlan, ageMonths, currentWeek }) {
   const [swapDay, setSwapDay] = useState(null);
   const [swapFood, setSwapFood] = useState(null);
   const [showSSRef, setShowSSRef] = useState(false);
   const [addSearch, setAddSearch] = useState("");
   const [swapSearch, setSwapSearch] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(null); // { day, food }
 
-  const handleDeleteFood = (day, foodToDelete) => {
-    setWeekPlan(p => ({ ...p, [day]: p[day].filter(f => f.id !== foodToDelete.id) }));
+  const handleDeleteFood = (day, foodToDelete, foodIdx) => {
+    setConfirmDelete({ day, food: foodToDelete, idx: foodIdx });
+  };
+  const confirmDeleteFood = () => {
+    if (!confirmDelete) return;
+    setWeekPlan(p => ({ ...p, [confirmDelete.day]: p[confirmDelete.day].filter((f, i) => i !== confirmDelete.idx) }));
+    setConfirmDelete(null);
   };
 
   const handleSwapFood = (day, oldFood, newFood) => {
@@ -1167,7 +1272,13 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
             📖 Solid Starts Guide
           </button>
           {/* Generate plan icon button */}
-          <button onClick={onCreatePlan} title="Generate Week's Plan" style={{ background:C.blue, border:"none", borderRadius:10, color:C.white, fontWeight:700, fontSize:16, padding:"8px 12px", cursor:"pointer" }}>
+          <button onClick={() => {
+            const hasItems = Object.values(weekPlan).some(d => Array.isArray(d) && d.length > 0);
+            if (hasItems) {
+              if (!window.confirm("Rebuild this week's plan? Your current changes will be replaced.")) return;
+            }
+            onCreatePlan();
+          }} title="Rebuild Week Plan" style={{ background:C.blue, border:"none", borderRadius:10, color:C.white, fontWeight:700, fontSize:16, padding:"8px 12px", cursor:"pointer" }}>
             ✦
           </button>
         </div>
@@ -1239,24 +1350,25 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
               const tried = triedFoods.includes(food.id);
               return (
                 <div key={`${food.id}-${idx}`} style={{ padding:"12px 14px", borderBottom: idx < foods.length - 1 ? `1px solid ${C.border}` : 'none' }}>
-                  <div style={{ display:"flex", alignItems:"flex-start", gap:12, marginBottom:10 }}>
-                    <div style={{ fontSize:40, lineHeight:1 }}>{food.emoji}</div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:8 }}>
-                        <span style={{ fontWeight:800, fontSize:15, color:C.charcoal }}>{food.name}</span>
-                        {food.allergen && <span style={{ background:C.goldLight, border:`1px solid ${C.goldMid}`, borderRadius:6, fontSize:10, fontWeight:700, color:C.gold, padding:"1px 7px" }}>⚠ Allergen</span>}
-                        {tried && <span style={{ background:C.greenLight, border:`1px solid ${C.greenMid}`, borderRadius:6, fontSize:10, fontWeight:700, color:C.green, padding:"1px 7px" }}>✓ Tried</span>}
-                        <button onClick={() => setSwapFood({ day: d, food })} style={{ background:C.slateLight, border:`1px solid ${C.slateMid}`, borderRadius:6, padding:"2px 8px", fontSize:10, fontWeight:600, color:C.slate, cursor:"pointer" }}>Swap</button>
-                        <button onClick={() => handleDeleteFood(d, food)} style={{ background:"transparent", border:"none", fontSize:16, color:C.red, cursor:"pointer", padding:"0 4px" }}>🗑️</button>
-                      </div>
-                      <button onClick={() => onLogFood(food)} style={{ background: tried ? C.greenLight : C.slateLight, border:`1px solid ${tried ? C.greenMid : C.slateMid}`, borderRadius:8, padding:"5px 12px", fontSize:11, fontWeight:700, color: tried ? C.green : C.slate, cursor:"pointer" }}>
-                        Mark as Tried
-                      </button>
+                  {/* Name row: emoji | name + allergen + tried/mark-button | spacer | + log | swap | delete */}
+                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+                    <div style={{ fontSize:36, lineHeight:1, flexShrink:0 }}>{food.emoji}</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
+                      <span style={{ fontWeight:800, fontSize:15, color:C.charcoal, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{food.name}</span>
+                      {food.allergen && <span style={{ background:C.goldLight, border:`1px solid ${C.goldMid}`, borderRadius:6, fontSize:10, fontWeight:700, color:C.gold, padding:"1px 6px", flexShrink:0 }}>⚠</span>}
+                      {tried
+                        ? <button onClick={() => onUndoTried(food)} style={{ background:C.greenLight, border:`1px solid ${C.greenMid}`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:C.green, cursor:"pointer", flexShrink:0 }}>✓ Tried</button>
+                        : <button onClick={() => onMarkTried(food)} style={{ background:C.slateLight, border:`1px solid ${C.slateMid}`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:C.slate, cursor:"pointer", flexShrink:0 }}>Not Tried</button>
+                      }
                     </div>
+                    <div style={{ flex:1 }} />
+                    <button onClick={() => onLogFood(food)} style={{ background:C.blue, border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer", lineHeight:1, flexShrink:0, color:C.white, fontWeight:700 }}>Log</button>
+                    <button onClick={() => { setSwapFood({ day: d, food }); setSwapSearch(""); }} style={{ background:C.white, border:`1px solid ${C.slateMid}`, borderRadius:6, padding:"4px 8px", fontSize:14, cursor:"pointer", lineHeight:1, flexShrink:0 }}>🔄</button>
+                    <button onClick={() => handleDeleteFood(d, food, idx)} style={{ background:"transparent", border:`1px solid ${C.redMid}`, borderRadius:6, fontSize:14, color:C.red, cursor:"pointer", padding:"4px 8px", lineHeight:1, flexShrink:0 }}>🗑️</button>
                   </div>
-                  <div style={{ background:C.slateLight, borderRadius:10, padding:"10px 12px", border:`1px solid ${C.slateMid}` }}>
-                    <div style={{ fontSize:10, fontWeight:700, color:C.muted, marginBottom:4 }}>HOW TO SERVE ({ageMonths} MONTHS)</div>
-                    <div style={{ fontSize:12, color:C.charcoal, lineHeight:1.4 }}>{getServingSuggestion(food.id, ageMonths)}</div>
+                  <div style={{ background:"#FFF8EE", borderRadius:10, padding:"10px 12px", border:`1px solid #F5D87A` }}>
+                    <div style={{ fontSize:10, fontWeight:800, color:"#7A5C00", marginBottom:4, letterSpacing:"0.4px" }}>HOW TO SERVE · {ageMonths} MONTHS</div>
+                    <div style={{ fontSize:12, color:C.charcoal, lineHeight:1.5 }}>{getServingSuggestion(food.id, ageMonths)}</div>
                   </div>
                 </div>
               );
@@ -1309,15 +1421,30 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
           </div>
         </div>
       )}
+
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300, padding:24 }} onClick={() => setConfirmDelete(null)}>
+          <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:360 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:8 }}>Remove {confirmDelete.food.name}?</div>
+            <div style={{ fontSize:13, color:C.muted, marginBottom:20 }}>This removes it from {confirmDelete.day}'s plan. Your log history won't be affected.</div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={() => setConfirmDelete(null)} style={{ flex:1, background:C.slateLight, border:`1px solid ${C.slateMid}`, borderRadius:10, padding:"11px 0", fontWeight:700, color:C.slateDark, cursor:"pointer" }}>Cancel</button>
+              <button onClick={confirmDeleteFood} style={{ flex:1, background:C.red, border:"none", borderRadius:10, padding:"11px 0", fontWeight:700, color:C.white, cursor:"pointer" }}>Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // Library tab
-function LibraryTab({ triedFoods, logs, onToggle }) {
+function LibraryTab({ triedFoods, logs, onToggle, onLogFood }) {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const allergensDone = ALLERGEN_GROUPS.filter(g => { const gl = (logs||[]).filter(l => g.foods.includes(l.foodId)); return gl.length >= 2 && !gl.some(l => l.reaction); }).length;
+  const safeLogs = logs || [];
+  const allergensDone = ALLERGEN_GROUPS.filter(g => { const gl = safeLogs.filter(l => g.foods.includes(l.foodId) && !l.reaction); return new Set(gl.map(l => l.date)).size >= 2; }).length;
   const allergensTotal = ALLERGEN_GROUPS.length;
   
   const sortedFoods = [...FOODS].sort((a, b) => a.order - b.order);
@@ -1383,8 +1510,8 @@ function LibraryTab({ triedFoods, logs, onToggle }) {
               {tried && <div style={{ position:"absolute", top:8, left:8, fontSize:10, background:C.greenLight, border:`1px solid ${C.greenMid}`, borderRadius:6, padding:"1px 6px", fontWeight:700, color:C.green }}>✓</div>}
               <div style={{ textAlign:"center", fontSize:40, margin:"8px 0 6px" }}>{f.emoji}</div>
               <div style={{ fontWeight:700, fontSize:13, color:C.charcoal, textAlign:"center", marginBottom:8 }}>{f.name}</div>
-              <button onClick={() => onToggle(f.id)} style={{ width:"100%", background: tried ? C.greenLight : C.slateLight, border:`1px solid ${tried ? C.greenMid : C.slateMid}`, borderRadius:8, padding:"6px 0", fontSize:11, fontWeight:700, color: tried ? C.green : C.slate, cursor:"pointer" }}>
-                {tried ? "✓ Tried — Undo" : "Mark Tried"}
+              <button onClick={() => onLogFood(f)} style={{ width:"100%", background: tried ? C.greenLight : C.slateLight, border:`1px solid ${tried ? C.greenMid : C.slateMid}`, borderRadius:8, padding:"6px 0", fontSize:11, fontWeight:700, color: tried ? C.green : C.slate, cursor:"pointer" }}>
+                {tried ? "Tried" : "Log First Try"}
               </button>
             </div>
           );
@@ -1395,22 +1522,27 @@ function LibraryTab({ triedFoods, logs, onToggle }) {
 }
 
 // Allergens tab — simplified to 8 main groups
-function AllergensTab({ triedFoods, logs, onToggle, onLogFood }) {
+function AllergensTab({ triedFoods, logs, onToggle, onLogFood, onDeleteLog }) {
   const [selectedGroup, setSelectedGroup] = useState(null);
+  const [viewLogGroup, setViewLogGroup] = useState(null);
 
   const getGroupStatus = (group) => {
-    // A group is "cleared" if at least one food in it has 2+ logs with no reaction
     const groupFoodIds = group.foods;
     const allGroupLogs = logs.filter(l => groupFoodIds.includes(l.foodId));
-    const hasReaction = allGroupLogs.some(l => l.reaction);
-    if (hasReaction) return { label:"Possible Allergy", color:C.red, bg:C.redLight, border:C.redMid };
-    const triedCount = allGroupLogs.length;
-    if (triedCount >= 2) return { label:"✓ Cleared", color:C.green, bg:C.greenLight, border:C.greenMid };
-    if (triedCount === 1) return { label:"Pending", color:C.gold, bg:C.goldLight, border:C.goldMid };
-    return { label:"Not Tried", color:C.slate, bg:C.slateLight, border:C.slateMid };
+    const reactionLogs = allGroupLogs.filter(l => l.reaction);
+    const hasReaction = reactionLogs.length > 0;
+    const nonReactionLogs = allGroupLogs.filter(l => !l.reaction);
+    const distinctDates = new Set(nonReactionLogs.map(l => l.date)).size;
+    // Reaction doesn't permanently block — show Possible Allergy only if no subsequent clearance
+    if (hasReaction && distinctDates < 2) return { label:"Possible Reaction", color:C.red, bg:C.redLight, border:C.redMid };
+    if (distinctDates >= 2) return { label:"Cleared", color:C.green, bg:C.greenLight, border:C.greenMid };
+    if (allGroupLogs.length >= 1) return { label:"In Progress", color:C.gold, bg:C.goldLight, border:C.goldMid };
+    return { label:"Not Started", color:C.slate, bg:C.slateLight, border:C.slateMid };
   };
 
-  const clearedCount = ALLERGEN_GROUPS.filter(g => getGroupStatus(g).label === "✓ Cleared").length;
+  const clearedCount = ALLERGEN_GROUPS.filter(g => getGroupStatus(g).label === "Cleared").length;
+  const parseDate = (d) => { const [y,m,dy] = d.split('-').map(Number); return new Date(y, m-1, dy); };
+  const formatDate = (d) => { try { const [y,m,dy] = d.split('-').map(Number); return new Date(y,m-1,dy).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); } catch(e){ return d; }};
 
   return (
     <div style={{ paddingBottom:90 }}>
@@ -1434,9 +1566,8 @@ function AllergensTab({ triedFoods, logs, onToggle, onLogFood }) {
         {ALLERGEN_GROUPS.map(group => {
           const status = getGroupStatus(group);
           const groupLogs = logs.filter(l => group.foods.includes(l.foodId));
-          const lastLog = groupLogs.length > 0 ? groupLogs[groupLogs.length - 1] : null;
-          const formatDate = (d) => new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric' });
-          // Find first food in this group that exists in FOODS for logging
+          const sortedGroupLogs = [...groupLogs].sort((a, b) => parseDate(b.date) - parseDate(a.date));
+          const lastLog = sortedGroupLogs.length > 0 ? sortedGroupLogs[0] : null;
           const firstFood = FOODS.find(f => group.foods.includes(f.id));
 
           return (
@@ -1455,12 +1586,20 @@ function AllergensTab({ triedFoods, logs, onToggle, onLogFood }) {
                      `${groupLogs.length} exposure${groupLogs.length !== 1 ? 's' : ''}${lastLog ? ` · last ${formatDate(lastLog.date)}` : ''}`}
                   </div>
                 </div>
-                {firstFood && (
-                  <button onClick={e => { e.stopPropagation(); onLogFood(firstFood); }}
-                    style={{ background:C.blue, border:"none", borderRadius:8, padding:"7px 12px", fontSize:11, fontWeight:700, color:C.white, cursor:"pointer", flexShrink:0 }}>
-                    Log
-                  </button>
-                )}
+                <div style={{ display:"flex", flexDirection:"row", gap:6, flexShrink:0 }}>
+                  {groupLogs.length > 0 && (
+                    <button onClick={e => { e.stopPropagation(); setViewLogGroup(group); }}
+                      style={{ background:C.slateLight, border:`1px solid ${C.slateMid}`, borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:700, color:C.slate, cursor:"pointer" }}>
+                      Log History
+                    </button>
+                  )}
+                  {firstFood && (
+                    <button onClick={e => { e.stopPropagation(); onLogFood(firstFood); }}
+                      style={{ background:C.blue, border:"none", borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:700, color:C.white, cursor:"pointer" }}>
+                      Log
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Expanded: show individual foods in group */}
@@ -1486,6 +1625,54 @@ function AllergensTab({ triedFoods, logs, onToggle, onLogFood }) {
           );
         })}
       </div>
+
+      {/* View Log Modal */}
+      {viewLogGroup && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => setViewLogGroup(null)}>
+          <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"75vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+              <div style={{ fontWeight:800, fontSize:17, color:C.charcoal }}>{viewLogGroup.emoji} {viewLogGroup.name} Log</div>
+              <button onClick={() => setViewLogGroup(null)} style={{ background:"none", border:"none", fontSize:20, cursor:"pointer", color:C.muted }}>✕</button>
+            </div>
+            {(() => {
+              const hasReaction = logs.some(l => viewLogGroup.foods.includes(l.foodId) && l.reaction);
+              const cleanLogs = logs.filter(l => viewLogGroup.foods.includes(l.foodId) && !l.reaction);
+              const distinctClean = new Set(cleanLogs.map(l => l.date)).size;
+              if (hasReaction && distinctClean < 2) return (
+                <div style={{ background:C.redLight, border:`1px solid ${C.redMid}`, borderRadius:10, padding:"10px 12px", marginBottom:12 }}>
+                  <div style={{ fontWeight:700, color:C.red, fontSize:12, marginBottom:3 }}>Possible reaction recorded</div>
+                  <div style={{ fontSize:11, color:C.slateDark, lineHeight:1.5 }}>Consult your pediatrician before reintroducing. Once cleared by your doctor, continue logging exposures here — status updates automatically after 2 clean exposures on separate days.</div>
+                </div>
+              );
+              return null;
+            })()}
+            {(() => {
+              const gLogs = logs.map((l,i) => ({...l, _idx:i})).filter(l => viewLogGroup.foods.includes(l.foodId));
+              const sorted = [...gLogs].sort((a,b) => parseDate(b.date) - parseDate(a.date));
+              return sorted.length === 0 ? (
+                <div style={{ color:C.muted, fontSize:13, padding:"16px 0" }}>No log entries yet.</div>
+              ) : (
+                <>
+                  <div style={{ fontSize:12, color:C.muted, marginBottom:14 }}>{sorted.length} exposure{sorted.length !== 1 ? 's' : ''} · last {formatDate(sorted[0].date)}</div>
+                  {sorted.map((log, i) => (
+                    <div key={i} style={{ display:"flex", alignItems:"flex-start", gap:10, padding:"10px 12px", background: log.reaction ? C.redLight : C.slateLight, border:`1px solid ${log.reaction ? C.redMid : C.slateMid}`, borderRadius:10, marginBottom:8 }}>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:2 }}>
+                          <span style={{ fontWeight:700, fontSize:13, color:C.charcoal }}>{formatDate(log.date)}</span>
+                          <span style={{ fontSize:11, color:C.muted }}>{log.foodName}</span>
+                          {log.reaction && <span style={{ fontSize:10, fontWeight:700, color:C.red, background:C.redLight, border:`1px solid ${C.redMid}`, borderRadius:4, padding:"1px 5px" }}>⚠ Reaction</span>}
+                        </div>
+                        {log.note && <div style={{ fontSize:12, color:C.muted }}>{log.note}</div>}
+                      </div>
+                      <button onClick={() => { onDeleteLog(log._idx); }} style={{ background:"transparent", border:`1px solid ${C.redMid}`, borderRadius:6, padding:"4px 8px", fontSize:13, color:C.red, cursor:"pointer", flexShrink:0 }}>🗑️</button>
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1529,49 +1716,157 @@ function LogModal({ food, onLog, onClose }) {
   );
 }
 
+
+// Undo Tried Modal
+function UndoTriedModal({ food, lastLog, onConfirm, onClose }) {
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:300 }} onClick={onClose}>
+      <div style={{ background:"#FFFFFF", borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430 }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontWeight:800, fontSize:18, color:"#1E2A38", marginBottom:6 }}>Undo {food.emoji} {food.name}?</div>
+        <div style={{ fontSize:13, color:"#6B7280", marginBottom:20, lineHeight:1.5 }}>
+          {lastLog
+            ? `Last logged on ${lastLog.date}. Would you like to remove that log entry too?`
+            : "This food has no log entries. It will just be unmarked as tried."}
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {lastLog && (
+            <button onClick={() => onConfirm('last')} style={{ background:"#FDECEA", border:"1px solid #FADBD8", borderRadius:10, padding:"12px 16px", fontWeight:700, color:"#D63031", cursor:"pointer", fontSize:13, textAlign:"left" }}>
+              ✕ Undo and remove last log entry on {lastLog.date}
+            </button>
+          )}
+          <button onClick={() => onConfirm('all')} style={{ background:"#FDECEA", border:"1px solid #FADBD8", borderRadius:10, padding:"12px 16px", fontWeight:700, color:"#D63031", cursor:"pointer", fontSize:13, textAlign:"left" }}>
+            ✕ Undo all log entries
+          </button>
+          <button onClick={onClose} style={{ background:"transparent", border:"none", padding:"8px 0", fontWeight:600, color:"#6B7280", cursor:"pointer", fontSize:13 }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Setup screen shown when Supabase credentials haven't been filled in yet
+function SetupScreen() {
+  return (
+    <div style={{ fontFamily:"'Segoe UI',system-ui,sans-serif", background:C.bg, minHeight:"100vh", maxWidth:430, margin:"0 auto", padding:32, boxSizing:"border-box" }}>
+      <div style={{ fontSize:36, marginBottom:16 }}>🥣</div>
+      <div style={{ fontWeight:800, fontSize:20, color:C.charcoal, marginBottom:8 }}>One setup step needed</div>
+      <div style={{ fontSize:14, color:C.muted, lineHeight:1.6, marginBottom:24 }}>
+        To sync data between you and your husband's phones, you need to connect a free Supabase database. This takes about 15 minutes and only needs to be done once.
+      </div>
+      <div style={{ background:C.white, borderRadius:14, border:`1px solid ${C.border}`, padding:20, marginBottom:20 }}>
+        <div style={{ fontWeight:700, fontSize:13, color:C.slateDark, marginBottom:12 }}>In App.jsx, find these lines and fill in your credentials:</div>
+        <div style={{ background:C.slateLight, borderRadius:8, padding:12, fontFamily:"monospace", fontSize:12, color:C.charcoal, lineHeight:1.7 }}>
+          <div>const SUPABASE_URL = "YOUR_SUPABASE_URL";</div>
+          <div>const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";</div>
+        </div>
+      </div>
+      <div style={{ background:C.goldLight, border:`1px solid ${C.goldMid}`, borderRadius:12, padding:16, fontSize:13, color:"#7A5C00", lineHeight:1.6 }}>
+        Follow the step-by-step setup guide (supabase-setup-guide.md) for full instructions on creating your free Supabase project and getting these values.
+      </div>
+    </div>
+  );
+}
+
 // Main app
 export default function ShannonsSolids() {
+  if (SUPABASE_URL === "YOUR_SUPABASE_URL" || SUPABASE_ANON_KEY === "YOUR_SUPABASE_ANON_KEY") {
+    return <SetupScreen />;
+  }
+  return <AppInner />;
+}
+
+function AppInner() {
   const [tab, setTab] = useState("overview");
   const [triedFoods, setTriedFoods] = useState(["peanut"]);
   const [logs, setLogs] = useState([
-    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"First try! No reaction.", date:"2/10/2026" },
-    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"Second exposure going well.", date:"2/12/2026" }
+    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"First try! No reaction.", date:"2026-02-10" },
+    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"Second exposure going well.", date:"2026-02-12" }
   ]);
   const [settings, setSettings] = useState({ babyName: "Shannon", babyBirthday: "2025-09-15", startDate: "2026-02-10" });
   const [weekPlan, setWeekPlan] = useState(() => buildDefaultPlan(["peanut"], 1));
   const [logTarget, setLogTarget] = useState(null);
   const [quickLogSearch, setQuickLogSearch] = useState("");
+  const [undoTarget, setUndoTarget] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const currentWeek = getCurrentWeek(settings.startDate);
   const ageMonths = getAgeInMonths(settings.babyBirthday);
 
+  const [saveStatus, setSaveStatus] = useState("saved"); // "saved" | "saving"
+
   useEffect(() => {
-    const data = loadData();
-    setTriedFoods(data.triedFoods);
-    setLogs(data.logs);
-    setWeekPlan(data.weekPlan);
-    setSettings(data.settings);
-    setLoading(false);
+    loadData().then(data => {
+      setTriedFoods(data.triedFoods);
+      setLogs(data.logs);
+      setWeekPlan(data.weekPlan);
+      setSettings(data.settings);
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {
     if (!loading) {
-      saveData(triedFoods, logs, weekPlan, settings);
+      setSaveStatus("saving");
+      saveData(triedFoods, logs, weekPlan, settings, () => setSaveStatus("saved"));
     }
   }, [triedFoods, logs, weekPlan, settings, loading]);
 
   const handleToggle = id => setTriedFoods(prev => prev.includes(id) ? prev.filter(x => x!==id) : [...prev, id]);
-  const handleMarkTried = id => setTriedFoods(prev => prev.includes(id) ? prev : [...prev, id]);
   const handleUnmarkTried = id => setTriedFoods(prev => prev.filter(x => x!==id));
   const handleCreatePlan = () => setWeekPlan(buildDefaultPlan(triedFoods, currentWeek));
+
+  const handleDeleteLog = (logIdx) => {
+    const deletedLog = logs[logIdx];
+    const newLogs = logs.filter((_, i) => i !== logIdx);
+    setLogs(newLogs);
+    // If no remaining logs for this food, unmark as tried
+    if (deletedLog) {
+      const remaining = newLogs.filter(l => l.foodId === deletedLog.foodId);
+      if (remaining.length === 0) handleUnmarkTried(deletedLog.foodId);
+    }
+  };
+
+  // "Mark as Tried" always opens the log modal so date + reaction are captured
+  const handleMarkTried = (food) => {
+    const f = typeof food === 'string' ? FOODS.find(x => x.id === food) : food;
+    if (f) setLogTarget(f);
+  };
+
   const handleLogFood = (food, reaction=false, note="", customDate=null) => {
     if (reaction === false && note === "" && !customDate) { setLogTarget(food); return; }
-    const logDate = customDate || new Date().toLocaleDateString();
+    // Always store as YYYY-MM-DD to avoid UTC/locale timezone bugs
+    const today = new Date();
+    const todayISO = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+    const logDate = customDate || todayISO;
     setLogs(prev => [...prev, { foodId:food.id, foodName:food.name, reaction, note, date: logDate }]);
-    if (!reaction) handleMarkTried(food.id);
+    if (!reaction) setTriedFoods(prev => prev.includes(food.id) ? prev : [...prev, food.id]);
     setLogTarget(null);
+  };
+
+  // Tapping "✓ Tried" opens an undo prompt
+  const handleUndoTried = (food) => {
+    const foodLogs = logs.map((l, i) => ({...l, _idx: i})).filter(l => l.foodId === food.id);
+    const sorted = [...foodLogs].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const lastLog = sorted.length > 0 ? sorted[0] : null;
+    setUndoTarget({ food, lastLog });
+  };
+
+  const handleConfirmUndo = (mode) => {
+    if (!undoTarget) return;
+    const { food, lastLog } = undoTarget;
+    if (mode === 'last' && lastLog !== null) {
+      const newLogs = logs.filter((_, i) => i !== lastLog._idx);
+      setLogs(newLogs);
+      const remaining = newLogs.filter(l => l.foodId === food.id);
+      if (remaining.length === 0) handleUnmarkTried(food.id);
+    } else if (mode === 'all') {
+      setLogs(prev => prev.filter(l => l.foodId !== food.id));
+      handleUnmarkTried(food.id);
+    }
+    setUndoTarget(null);
   };
 
   const tabs = [
@@ -1604,7 +1899,10 @@ export default function ShannonsSolids() {
               <div style={{ color:"#90A8C0", fontSize:11 }}>Week {currentWeek} · {ageMonths} months old</div>
             </div>
           </div>
-          <div style={{ display:"flex", gap:8 }}>
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            <div style={{ fontSize:10, fontWeight:600, color: saveStatus === "saving" ? "#90A8C0" : "#5CB88A" }}>
+              {saveStatus === "saving" ? "syncing..." : "synced"}
+            </div>
             <button onClick={() => setLogTarget("quick")} style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:10, padding:"7px 13px", color:C.white, fontSize:12, fontWeight:700, cursor:"pointer" }}>+ Log</button>
             <button onClick={() => setShowSettings(true)} style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:10, padding:"7px 10px", color:C.white, fontSize:16, cursor:"pointer" }}>⚙️</button>
           </div>
@@ -1613,10 +1911,10 @@ export default function ShannonsSolids() {
 
       {/* Content */}
       <div style={{ padding:"16px 14px 0" }}>
-        {tab==="overview"  && <OverviewTab  triedFoods={triedFoods} logs={logs} weekPlan={weekPlan} onLogFood={handleLogFood} onCreatePlan={handleCreatePlan} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} setWeekPlan={setWeekPlan} ageMonths={ageMonths} startDate={settings.startDate} />}
-        {tab==="weekly"    && <WeeklyTab    triedFoods={triedFoods} weekPlan={weekPlan} setWeekPlan={setWeekPlan} onLogFood={handleLogFood} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} onCreatePlan={handleCreatePlan} ageMonths={ageMonths} currentWeek={currentWeek} />}
-        {tab==="library"   && <LibraryTab   triedFoods={triedFoods} logs={logs} onToggle={handleToggle} />}
-        {tab==="allergens" && <AllergensTab triedFoods={triedFoods} logs={logs} onToggle={handleToggle} onLogFood={handleLogFood} />}
+        {tab==="overview"  && <OverviewTab  triedFoods={triedFoods} logs={logs} weekPlan={weekPlan} onLogFood={handleLogFood} onCreatePlan={handleCreatePlan} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} onUndoTried={handleUndoTried} setWeekPlan={setWeekPlan} ageMonths={ageMonths} startDate={settings.startDate} currentWeek={currentWeek} />}
+        {tab==="weekly"    && <WeeklyTab    triedFoods={triedFoods} weekPlan={weekPlan} setWeekPlan={setWeekPlan} onLogFood={handleLogFood} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} onUndoTried={handleUndoTried} onCreatePlan={handleCreatePlan} ageMonths={ageMonths} currentWeek={currentWeek} />}
+        {tab==="library"   && <LibraryTab   triedFoods={triedFoods} logs={logs} onToggle={handleToggle} onLogFood={handleLogFood} />}
+        {tab==="allergens" && <AllergensTab triedFoods={triedFoods} logs={logs} onToggle={handleToggle} onLogFood={handleLogFood} onDeleteLog={handleDeleteLog} />}
       </div>
 
       {/* Modals */}
@@ -1638,6 +1936,7 @@ export default function ShannonsSolids() {
         </div>
       )}
       {showSettings && <SettingsModal settings={settings} onSave={setSettings} onClose={() => setShowSettings(false)} />}
+      {undoTarget && <UndoTriedModal food={undoTarget.food} lastLog={undoTarget.lastLog} onConfirm={handleConfirmUndo} onClose={() => setUndoTarget(null)} />}
 
       {/* Bottom nav */}
       <nav style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:430, background:C.white, borderTop:`1px solid ${C.border}`, display:"flex", zIndex:100, boxShadow:"0 -2px 12px rgba(0,0,0,0.08)" }}>
