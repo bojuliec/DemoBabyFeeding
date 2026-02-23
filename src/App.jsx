@@ -745,18 +745,30 @@ function getAgeInMonths(birthday) {
 }
 
 // ─── Supabase config — replace these two values with your own ───────────────
-const SUPABASE_URL = "https://wmleqsmbpwymmbetqjxe.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndtbGVxc21icHd5bW1iZXRxanhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NzIyNDEsImV4cCI6MjA4NzA0ODI0MX0.1h3VSXmNyCqxfcjMKKCSvEbmYmJUGLzYDMJkvAIoOlk";
-const DATA_KEY = "shannon_family"; // shared row key — same for both phones
+const SUPABASE_URL = "https://ufaedvzblgjosmlbmodr.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVmYWVkdnpibGdqb3NtbGJtb2RyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MjE1NDIsImV4cCI6MjA4NzM5NzU0Mn0.1fOzA-nqst_W79dd2p8betpj9BhxnOvHajrQYjZvuaY";
+const DATA_KEY = "leia_demo"; // shared row key — same for both phones
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DEFAULT_DATA = {
-  triedFoods: ["peanut"],
+  triedFoods: ["peanut", "egg", "avocado", "sweet-potato", "banana", "broccoli", "salmon", "oat"],
   logs: [
-    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"First try! No reaction.", date:"2026-02-10" },
-    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"Second exposure going well.", date:"2026-02-12" }
+    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"Mixed into puree, no reaction.", date:"2026-01-20" },
+    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"Second exposure, all good!", date:"2026-01-22" },
+    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"Maintenance dose.", date:"2026-02-01" },
+    { foodId:"egg", foodName:"Egg", reaction:false, note:"Scrambled egg, loved it!", date:"2026-01-24" },
+    { foodId:"egg", foodName:"Egg", reaction:false, note:"Second try, no issues.", date:"2026-01-26" },
+    { foodId:"egg", foodName:"Egg", reaction:false, note:"Maintenance.", date:"2026-02-05" },
+    { foodId:"avocado", foodName:"Avocado", reaction:false, note:"First introduction.", date:"2026-01-28" },
+    { foodId:"avocado", foodName:"Avocado", reaction:false, note:"Mashed with banana.", date:"2026-01-30" },
+    { foodId:"sweet-potato", foodName:"Sweet Potato", reaction:false, note:"Pureed, big hit!", date:"2026-02-02" },
+    { foodId:"banana", foodName:"Banana", reaction:false, note:"Mashed, loves it.", date:"2026-02-03" },
+    { foodId:"broccoli", foodName:"Broccoli", reaction:false, note:"Steamed florets.", date:"2026-02-07" },
+    { foodId:"salmon", foodName:"Salmon", reaction:false, note:"First fish intro, no reaction.", date:"2026-02-10" },
+    { foodId:"oat", foodName:"Oat", reaction:false, note:"Oatmeal for breakfast.", date:"2026-02-12" },
+    { foodId:"oat", foodName:"Oat", reaction:false, note:"Second oat exposure.", date:"2026-02-14" },
   ],
-  settings: { babyName:"Shannon", babyBirthday:"2025-09-15", startDate:"2026-02-10" },
+  settings: { babyName:"Leia", babyBirthday:"2025-10-01", startDate:"2026-02-05" },
   weekPlans: {}, // keyed by week number, built on first load
 };
 
@@ -1879,13 +1891,15 @@ export default function ShannonsSolids() {
 
 function AppInner() {
   const [tab, setTab] = useState("overview");
-  const [triedFoods, setTriedFoods] = useState(["peanut"]);
+  const [triedFoods, setTriedFoods] = useState(["peanut", "egg", "avocado", "sweet-potato", "banana", "broccoli", "salmon", "oat"]);
   const [logs, setLogs] = useState([
-    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"First try! No reaction.", date:"2026-02-10" },
-    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"Second exposure going well.", date:"2026-02-12" }
+    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"Mixed into puree, no reaction.", date:"2026-01-20" },
+    { foodId:"peanut", foodName:"Peanut", reaction:false, note:"Second exposure, all good!", date:"2026-01-22" },
+    { foodId:"egg", foodName:"Egg", reaction:false, note:"Scrambled egg, loved it!", date:"2026-01-24" },
+    { foodId:"oat", foodName:"Oat", reaction:false, note:"Oatmeal for breakfast.", date:"2026-02-12" },
   ]);
-  const [settings, setSettings] = useState({ babyName: "Shannon", babyBirthday: "2025-09-15", startDate: "2026-02-10" });
-  const [weekPlans, setWeekPlans] = useState(() => ({ 1: buildDefaultPlan(["peanut"], 1), 2: buildDefaultPlan(["peanut"], 2) }));
+  const [settings, setSettings] = useState({ babyName: "Leia", babyBirthday: "2025-10-01", startDate: "2026-02-05" });
+  const [weekPlans, setWeekPlans] = useState(() => ({ 1: buildDefaultPlan(["peanut","egg","oat"], 1), 2: buildDefaultPlan(["peanut","egg","oat"], 2) }));
   const [logTarget, setLogTarget] = useState(null);
   const [quickLogSearch, setQuickLogSearch] = useState("");
   const [undoTarget, setUndoTarget] = useState(null);
@@ -2012,6 +2026,7 @@ function AppInner() {
 
   return (
     <div style={{ fontFamily:"'Segoe UI',system-ui,sans-serif", background:C.bg, minHeight:"100vh", maxWidth:430, margin:"0 auto", position:"relative" }}>
+      <div style={{ background:"#7A5C00", color:"#FEF5DC", fontSize:11, fontWeight:700, textAlign:"center", padding:"6px 0", letterSpacing:"0.5px" }}>DEMO — other users may be syncing data</div>
       {/* Header */}
       <div style={{ background:`linear-gradient(135deg, ${C.header} 0%, ${C.headerDark} 100%)`, padding:"16px 18px 14px", position:"sticky", top:0, zIndex:100 }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
