@@ -1824,10 +1824,12 @@ function AppInner() {
 
   useEffect(() => {
     loadData().then(data => {
-      setTriedFoods(data.triedFoods);
-      setLogs(data.logs);
-      setWeekPlan(data.weekPlan);
-      setSettings(data.settings);
+      setTriedFoods(Array.isArray(data.triedFoods) ? data.triedFoods : []);
+      setLogs(Array.isArray(data.logs) ? data.logs : []);
+      setWeekPlan(data.weekPlan && typeof data.weekPlan === 'object' ? data.weekPlan : buildDefaultPlan([], 1));
+      setSettings(data.settings && data.settings.babyName ? data.settings : DEFAULT_DATA.settings);
+      setLoading(false);
+    }).catch(() => {
       setLoading(false);
     });
   }, []);
