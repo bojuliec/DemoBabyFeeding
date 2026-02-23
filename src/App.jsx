@@ -1922,7 +1922,6 @@ function AppInner() {
         return filled;
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
 
   const isFirstLoad = useRef(true);
