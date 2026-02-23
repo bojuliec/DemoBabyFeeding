@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const C = {
   bg: "#EDEEF0", white: "#FFFFFF",
@@ -1813,7 +1813,7 @@ function AppInner() {
     });
   }, []);
 
-  const isFirstLoad = React.useRef(true);
+  const isFirstLoad = useRef(true);
 
   useEffect(() => {
     if (!loading) {
