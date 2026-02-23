@@ -794,21 +794,39 @@ function buildDefaults() {
 }
 
 // Debounce saves — waits 800ms after last change before writing to Supabase
+// Uses explicit check→PATCH or POST to avoid relying on unique constraint for upsert
 let _saveTimer = null;
 function saveData(triedFoods, logs, weekPlan, settings, onSaved) {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
+    const headers = {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+    };
+    const payload = { value: { triedFoods, logs, weekPlan, settings } };
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/app_data`, {
-        method: "POST",
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          "Content-Type": "application/json",
-          Prefer: "resolution=merge-duplicates,return=minimal",
-        },
-        body: JSON.stringify({ key: DATA_KEY, value: { triedFoods, logs, weekPlan, settings } }),
-      });
+      // Check if row already exists
+      const checkRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/app_data?key=eq.${DATA_KEY}&select=key`,
+        { headers }
+      );
+      const existing = checkRes.ok ? await checkRes.json() : [];
+      if (existing && existing.length > 0) {
+        // Row exists — update it
+        await fetch(`${SUPABASE_URL}/rest/v1/app_data?key=eq.${DATA_KEY}`, {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify(payload),
+        });
+      } else {
+        // Row doesn't exist — insert it
+        await fetch(`${SUPABASE_URL}/rest/v1/app_data`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ key: DATA_KEY, ...payload }),
+        });
+      }
       onSaved && onSaved();
     } catch (err) {
       console.error("saveData error:", err);
@@ -825,8 +843,8 @@ function FoodSwapModal({ currentFood, triedFoods, onSwap, onClose }) {
   );
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={onClose}>
-      <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"80vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={onClose}>
+      <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:430, maxHeight:"60vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
         <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:4 }}>Swap Food</div>
         <div style={{ fontSize:12, color:C.muted, marginBottom:12 }}>Currently: {currentFood?.emoji} {currentFood?.name}</div>
         
@@ -856,8 +874,8 @@ function AllergenDetailModal({ food, logs, onClose }) {
   const foodLogs = logs.filter(l => l.foodId === food.id);
   
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={onClose}>
-      <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={onClose}>
+      <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:430, maxHeight:"55vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
         <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
           <div style={{ fontSize:40 }}>{food.emoji}</div>
           <div>
@@ -894,7 +912,7 @@ function SettingsModal({ settings, onSave, onClose }) {
   const [startDate, setStartDate] = useState(settings.startDate);
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={onClose}>
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={onClose}>
       <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430 }} onClick={e => e.stopPropagation()}>
         <div style={{ fontWeight:800, fontSize:18, color:C.charcoal, marginBottom:16 }}>Settings</div>
         
@@ -1054,8 +1072,8 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
 
       {/* Add food to today panel */}
       {addToToday && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setAddToToday(false); setOverviewTodaySearch(""); }}>
-          <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={() => { setAddToToday(false); setOverviewTodaySearch(""); }}>
+          <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:430, maxHeight:"55vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:12 }}>Add Food to Today</div>
             <input type="text" placeholder="Search foods..." value={overviewTodaySearch} onChange={e => setOverviewTodaySearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
             <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
@@ -1075,8 +1093,8 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
 
       {/* Swap food in today panel */}
       {swapTodayFood && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setSwapTodayFood(null); setOverviewTodaySearch(""); }}>
-          <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={() => { setSwapTodayFood(null); setOverviewTodaySearch(""); }}>
+          <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:430, maxHeight:"55vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:4 }}>Swap Food</div>
             <div style={{ fontSize:12, color:C.muted, marginBottom:12 }}>Currently: {swapTodayFood.emoji} {swapTodayFood.name}</div>
             <input type="text" placeholder="Search foods..." value={overviewTodaySearch} onChange={e => setOverviewTodaySearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
@@ -1135,8 +1153,8 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
       </div>
 
       {swapDay && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setSwapDay(null); setOverviewDaySearch(""); }}>
-          <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={() => { setSwapDay(null); setOverviewDaySearch(""); }}>
+          <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:430, maxHeight:"55vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:12 }}>Add Food to {DAY_FULL[DAYS.indexOf(swapDay)]}</div>
             <input type="text" placeholder="Search foods..." value={overviewDaySearch} onChange={e => setOverviewDaySearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
             <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
@@ -1287,7 +1305,7 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
 
       {/* Solid Starts Reference Popup */}
       {showSSRef && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => setShowSSRef(false)}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={() => setShowSSRef(false)}>
           <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"75vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
               <div style={{ fontWeight:800, fontSize:17, color:C.charcoal }}>📖 Solid Starts Guide</div>
@@ -1380,8 +1398,8 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
 
             {/* Add food panel */}
             {swapDay === d && (
-              <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => setSwapDay(null)}>
-                <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
+              <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={() => setSwapDay(null)}>
+                <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:430, maxHeight:"55vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
                   <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:12 }}>Add Food to {DAY_FULL[i]}</div>
                   <input type="text" placeholder="Search foods..." value={addSearch} onChange={e => setAddSearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
                   <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
@@ -1406,8 +1424,8 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
 
       {/* Swap food modal */}
       {swapFood && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setSwapFood(null); setSwapSearch(""); }}>
-          <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={() => { setSwapFood(null); setSwapSearch(""); }}>
+          <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:430, maxHeight:"55vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:4 }}>Swap Food</div>
             <div style={{ fontSize:12, color:C.muted, marginBottom:12 }}>Currently: {swapFood.food.emoji} {swapFood.food.name}</div>
             <input type="text" placeholder="Search foods..." value={swapSearch} onChange={e => setSwapSearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
@@ -1632,7 +1650,7 @@ function AllergensTab({ triedFoods, logs, onToggle, onLogFood, onDeleteLog }) {
 
       {/* View Log Modal */}
       {viewLogGroup && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => setViewLogGroup(null)}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={() => setViewLogGroup(null)}>
           <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"75vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
               <div style={{ fontWeight:800, fontSize:17, color:C.charcoal }}>{viewLogGroup.emoji} {viewLogGroup.name} Log</div>
@@ -1690,7 +1708,7 @@ function LogModal({ food, onLog, onClose }) {
   const [date, setDate] = useState(todayString);
   
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={onClose}>
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={onClose}>
       <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430 }} onClick={e => e.stopPropagation()}>
         <div style={{ fontWeight:800, fontSize:18, color:C.charcoal, marginBottom:4 }}>Log {food.emoji} {food.name}</div>
         <div style={{ fontSize:12, color:C.muted, marginBottom:16 }}>How did it go?</div>
@@ -1934,8 +1952,8 @@ function AppInner() {
       {/* Modals */}
       {logTarget && logTarget !== "quick" && <LogModal food={logTarget} onLog={handleLogFood} onClose={() => setLogTarget(null)} />}
       {logTarget === "quick" && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 }} onClick={() => { setLogTarget(null); setQuickLogSearch(""); }}>
-          <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"70vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={() => { setLogTarget(null); setQuickLogSearch(""); }}>
+          <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:430, maxHeight:"55vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:12 }}>Log a Food</div>
             <input type="text" placeholder="Search foods..." value={quickLogSearch} onChange={e => setQuickLogSearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
             <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
