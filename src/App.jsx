@@ -1047,7 +1047,7 @@ function getTodayLabel() {
 }
 
 // Overview tab
-function OverviewTab({ triedFoods, logs, weekPlans, setWeekPlans, onLogFood, onMarkTried, onUnmarkTried, onUndoTried, ageMonths, startDate, currentWeek }) {
+function OverviewTab({ triedFoods, logs, weekPlans, setWeekPlans, onLogFood, onMarkTried, onUnmarkTried, onUndoTried, ageMonths, startDate, currentWeek, babyName }) {
   const [viewNextWeek, setViewNextWeek] = useState(false);
   const weekPlan = weekPlans[currentWeek] || {};
   const nextWeekPlan = weekPlans[currentWeek + 1] || {};
@@ -1104,7 +1104,7 @@ function OverviewTab({ triedFoods, logs, weekPlans, setWeekPlans, onLogFood, onM
           
           if (foodsArray.length === 0) {
             return (
-              <div style={{ padding:"24px 14px", color:C.muted, fontSize:16, fontStyle:"italic", textAlign:"center" }}>Shannon's day off 🧘</div>
+              <div style={{ padding:"24px 14px", color:C.muted, fontSize:16, fontStyle:"italic", textAlign:"center" }}>{babyName || "Shannon"}'s day off 🧘</div>
             );
           }
           
@@ -2051,7 +2051,7 @@ function AppInner() {
 
       {/* Content */}
       <div style={{ padding:"16px 14px 0" }}>
-        {tab==="overview"  && <OverviewTab  triedFoods={triedFoods} logs={logs} weekPlans={weekPlans} setWeekPlans={setWeekPlans} onLogFood={handleLogFood} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} onUndoTried={handleUndoTried} ageMonths={ageMonths} startDate={settings.startDate} currentWeek={currentWeek} />}
+        {tab==="overview"  && <OverviewTab  triedFoods={triedFoods} logs={logs} weekPlans={weekPlans} setWeekPlans={setWeekPlans} onLogFood={handleLogFood} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} onUndoTried={handleUndoTried} ageMonths={ageMonths} startDate={settings.startDate} currentWeek={currentWeek} babyName={settings.babyName} />}
         {tab==="weekly"    && <WeeklyTab    triedFoods={triedFoods} weekPlans={weekPlans} setWeekPlans={setWeekPlans} onLogFood={handleLogFood} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} onUndoTried={handleUndoTried} onCreatePlan={handleCreatePlan} ageMonths={ageMonths} currentWeek={currentWeek} startDate={settings.startDate} />}
         {tab==="library"   && <LibraryTab   triedFoods={triedFoods} logs={logs} onToggle={handleToggle} onLogFood={handleLogFood} />}
         {tab==="allergens" && <AllergensTab triedFoods={triedFoods} logs={logs} onToggle={handleToggle} onLogFood={handleLogFood} onDeleteLog={handleDeleteLog} />}
