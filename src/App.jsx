@@ -1284,9 +1284,11 @@ function OverviewTab({ triedFoods, logs, weekPlan, nextWeekPlan, onLogFood, onCr
 
 // Weekly/Plan tab
 function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, nextWeekPlan, setNextWeekPlan, onLogFood, onMarkTried, onUnmarkTried, onUndoTried, onCreatePlan, onCreateNextWeekPlan, ageMonths, currentWeek }) {
+  const [viewWeek, setViewWeek] = useState('current');
   const [swapDay, setSwapDay] = useState(null); // { week: 'current'|'next', day: 'Mon' }
   const [swapFood, setSwapFood] = useState(null); // { week, day, food }
   const [showSSRef, setShowSSRef] = useState(false);
+  const [ssRefWeek, setSsRefWeek] = useState(null); // null = auto-set on open
   const [addSearch, setAddSearch] = useState("");
   const [swapSearch, setSwapSearch] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null); // { week, day, food, idx }
@@ -1312,92 +1314,75 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, nextWeekPlan, setNextWee
   return (
     <div style={{ paddingBottom:90 }}>
       {/* Header row */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
         <div style={{ fontWeight:800, fontSize:15, color:C.charcoal }}>Week {currentWeek} Menu</div>
-        <div style={{ display:"flex", gap:8 }}>
-          {/* Solid Starts Guide reference button */}
-          <button onClick={() => setShowSSRef(true)} style={{ background:C.goldLight, border:`1px solid ${C.goldMid}`, borderRadius:10, color:"#7A5C00", fontWeight:700, fontSize:12, padding:"8px 12px", cursor:"pointer" }}>
-            📖 Solid Starts Guide
-          </button>
-          {/* Generate plan icon button */}
-          <button onClick={() => {
-            const hasItems = Object.values(weekPlan).some(d => Array.isArray(d) && d.length > 0);
-            if (hasItems) {
-              if (!window.confirm("Rebuild this week's plan? Your current changes will be replaced.")) return;
-            }
-            onCreatePlan();
-          }} title="Rebuild This Week's Plan" style={{ background:C.blue, border:"none", borderRadius:10, color:C.white, fontWeight:700, fontSize:12, padding:"8px 12px", cursor:"pointer" }}>
-            ✦ This Week
-          </button>
-          <button onClick={() => {
-            const hasItems = Object.values(nextWeekPlan).some(d => Array.isArray(d) && d.length > 0);
-            if (hasItems) {
-              if (!window.confirm("Rebuild next week's plan? Your current changes will be replaced.")) return;
-            }
-            onCreateNextWeekPlan();
-          }} title="Rebuild Next Week's Plan" style={{ background:C.slateDark, border:"none", borderRadius:10, color:C.white, fontWeight:700, fontSize:12, padding:"8px 12px", cursor:"pointer" }}>
-            ✦ Next Week
-          </button>
-        </div>
+        <button onClick={() => { setSsRefWeek(viewWeek === 'next' ? currentWeek + 1 : currentWeek); setShowSSRef(true); }} style={{ background:C.goldLight, border:`1px solid ${C.goldMid}`, borderRadius:10, color:"#7A5C00", fontWeight:700, fontSize:12, padding:"8px 12px", cursor:"pointer" }}>
+          📖 Solid Starts Guide
+        </button>
+      </div>
+      {/* Week toggle pills — centered */}
+      <div style={{ display:"flex", gap:8, marginBottom:14, justifyContent:"center" }}>
+        <button onClick={() => setViewWeek('current')} style={{ fontWeight:700, fontSize:12, padding:"5px 14px", borderRadius:20, border:"none", cursor:"pointer", background: viewWeek === 'current' ? C.blue : C.slateLight, color: viewWeek === 'current' ? C.white : C.slate }}>This Week · Wk {currentWeek}</button>
+        <button onClick={() => setViewWeek('next')} style={{ fontWeight:700, fontSize:12, padding:"5px 14px", borderRadius:20, border:"none", cursor:"pointer", background: viewWeek === 'next' ? C.slateDark : C.slateLight, color: viewWeek === 'next' ? C.white : C.slate }}>Next Week · Wk {Math.min(currentWeek+1,15)}</button>
       </div>
 
       {/* Solid Starts Reference Popup */}
-      {showSSRef && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={() => setShowSSRef(false)}>
-          <div style={{ background:C.white, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:430, maxHeight:"75vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-              <div style={{ fontWeight:800, fontSize:17, color:C.charcoal }}>📖 Solid Starts Guide</div>
-              <button onClick={() => setShowSSRef(false)} style={{ background:"none", border:"none", fontSize:20, cursor:"pointer", color:C.muted }}>✕</button>
-            </div>
-            <div style={{ fontSize:12, color:C.muted, marginBottom:16 }}>
-              Week {currentWeek} new foods from the PDF — reference only.
-            </div>
-            {refFoods.length === 0 ? (
-              <div style={{ color:C.muted, fontSize:13, padding:"12px 0" }}>No reference data for this week.</div>
-            ) : (
-              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
-                <thead>
-                  <tr style={{ background:C.slateDark }}>
-                    <th style={{ padding:"7px 10px", textAlign:"left", color:C.white, fontWeight:700, fontSize:11, borderRadius:"8px 0 0 0", whiteSpace:"nowrap" }}>Day</th>
-                    <th style={{ padding:"7px 10px", textAlign:"left", color:C.white, fontWeight:700, fontSize:11 }}>Solid Foods Meal</th>
-                    <th style={{ padding:"7px 10px", textAlign:"left", color:C.white, fontWeight:700, fontSize:11, borderRadius:"0 8px 0 0" }}>New Food</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {refFoods.map((row, i) => (
-                    <tr key={i} style={{ background: i % 2 === 0 ? C.white : C.slateLight, borderBottom:`1px solid ${C.border}` }}>
-                      <td style={{ padding:"8px 10px", color:C.muted, fontWeight:700, fontSize:11, whiteSpace:"nowrap", verticalAlign:"top" }}>Day {row.day}</td>
-                      <td style={{ padding:"8px 10px", color:C.slate, fontSize:11, verticalAlign:"top" }}>{row.meal}</td>
-                      <td style={{ padding:"8px 10px", verticalAlign:"top" }}>
-                        {row.newFood === "—" ? (
-                          <span style={{ color:C.muted, fontSize:11 }}>—</span>
-                        ) : (
-                          <span style={{ color:C.charcoal, fontWeight:600, fontSize:11 }}>{row.newFood}</span>
-                        )}
-                      </td>
+      {showSSRef && (() => {
+        const refW = Math.min(Math.max(ssRefWeek || currentWeek, 1), 15);
+        const refRows = SOLID_STARTS_REFERENCE[refW] || [];
+        return (
+          <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={() => setShowSSRef(false)}>
+            <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:430, maxHeight:"75vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+                <div style={{ fontWeight:800, fontSize:17, color:C.charcoal }}>📖 Solid Starts Guide</div>
+                <button onClick={() => setShowSSRef(false)} style={{ background:"none", border:"none", fontSize:20, cursor:"pointer", color:C.muted }}>✕</button>
+              </div>
+              {/* Week navigator */}
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, background:C.slateLight, borderRadius:10, padding:"8px 12px" }}>
+                <button onClick={() => setSsRefWeek(Math.max(refW - 1, 1))} disabled={refW <= 1} style={{ background:"none", border:"none", fontSize:18, fontWeight:700, cursor: refW <= 1 ? "default" : "pointer", color: refW <= 1 ? C.slateMid : C.slateDark, padding:"0 4px", lineHeight:1 }}>&#8249;</button>
+                <div style={{ fontWeight:700, fontSize:13, color:C.charcoal }}>Week {refW} <span style={{ fontWeight:400, color:C.muted, fontSize:11 }}>of 15</span></div>
+                <button onClick={() => setSsRefWeek(Math.min(refW + 1, 15))} disabled={refW >= 15} style={{ background:"none", border:"none", fontSize:18, fontWeight:700, cursor: refW >= 15 ? "default" : "pointer", color: refW >= 15 ? C.slateMid : C.slateDark, padding:"0 4px", lineHeight:1 }}>&#8250;</button>
+              </div>
+              {refRows.length === 0 ? (
+                <div style={{ color:C.muted, fontSize:13, padding:"12px 0" }}>No reference data for this week.</div>
+              ) : (
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                  <thead>
+                    <tr style={{ background:C.slateDark }}>
+                      <th style={{ padding:"7px 10px", textAlign:"left", color:C.white, fontWeight:700, fontSize:11, borderRadius:"8px 0 0 0", whiteSpace:"nowrap" }}>Day</th>
+                      <th style={{ padding:"7px 10px", textAlign:"left", color:C.white, fontWeight:700, fontSize:11 }}>Solid Foods Meal</th>
+                      <th style={{ padding:"7px 10px", textAlign:"left", color:C.white, fontWeight:700, fontSize:11, borderRadius:"0 8px 0 0" }}>New Food</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+                  </thead>
+                  <tbody>
+                    {refRows.map((row, i) => (
+                      <tr key={i} style={{ background: i % 2 === 0 ? C.white : C.slateLight, borderBottom:`1px solid ${C.border}` }}>
+                        <td style={{ padding:"8px 10px", color:C.muted, fontWeight:700, fontSize:11, whiteSpace:"nowrap", verticalAlign:"top" }}>Day {row.day}</td>
+                        <td style={{ padding:"8px 10px", color:C.slate, fontSize:11, verticalAlign:"top" }}>{row.meal}</td>
+                        <td style={{ padding:"8px 10px", verticalAlign:"top" }}>
+                          {row.newFood === "—" ? (
+                            <span style={{ color:C.muted, fontSize:11 }}>—</span>
+                          ) : (
+                            <span style={{ color:C.charcoal, fontWeight:600, fontSize:11 }}>{row.newFood}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Helper to render one week's days */}
-      {(['current', 'next']).map(weekType => {
+      {(['current', 'next']).filter(weekType => weekType === viewWeek).map(weekType => {
         const plan = weekType === 'next' ? nextWeekPlan : weekPlan;
         const weekNum = weekType === 'next' ? currentWeek + 1 : currentWeek;
         return (
           <div key={weekType}>
-            {/* Week divider */}
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10, marginTop: weekType === 'next' ? 20 : 0 }}>
-              <div style={{ flex:1, height:1, background:C.slateMid }} />
-              <div style={{ fontWeight:800, fontSize:12, color:C.slateDark, padding:"4px 12px", background:weekType === 'next' ? C.slateDark : C.blue, borderRadius:20, color:C.white }}>
-                {weekType === 'current' ? `This Week · Week ${currentWeek}` : `Next Week · Week ${Math.min(weekNum,15)}`}
-              </div>
-              <div style={{ flex:1, height:1, background:C.slateMid }} />
-            </div>
+
 
             {DAYS.map((d, i) => {
               const foods = plan[d] || [];
