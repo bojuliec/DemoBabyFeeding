@@ -794,12 +794,32 @@ function buildDefaults() {
 }
 
 // Debounce saves — waits 800ms after last change before writing to Supabase
-// Upsert: inserts the row if it doesn't exist, updates it if it does
+// Fetches latest remote data first, merges changes, then writes — prevents two phones overwriting each other
 let _saveTimer = null;
 function saveData(triedFoods, logs, weekPlan, settings, onSaved) {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
     try {
+      // Fetch current remote state before writing
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/app_data?key=eq.${DATA_KEY}&select=value`,
+        { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
+      );
+      const rows = res.ok ? await res.json() : [];
+      const remote = rows && rows.length > 0 ? rows[0].value : null;
+
+      // Merge logs: union by foodId+date+note fingerprint
+      let mergedLogs = logs;
+      if (remote && remote.logs) {
+        const localKeys = new Set(logs.map(l => l.foodId + '|' + l.date + '|' + l.note));
+        const remoteLogs = remote.logs.filter(l => !localKeys.has(l.foodId + '|' + l.date + '|' + l.note));
+        mergedLogs = [...logs, ...remoteLogs];
+      }
+      // Merge triedFoods: union of both sets
+      const mergedTried = remote && remote.triedFoods
+        ? [...new Set([...triedFoods, ...remote.triedFoods])]
+        : triedFoods;
+
       await fetch(`${SUPABASE_URL}/rest/v1/app_data`, {
         method: "POST",
         headers: {
@@ -808,7 +828,7 @@ function saveData(triedFoods, logs, weekPlan, settings, onSaved) {
           "Content-Type": "application/json",
           Prefer: "resolution=merge-duplicates,return=minimal",
         },
-        body: JSON.stringify({ key: DATA_KEY, value: { triedFoods, logs, weekPlan, settings } }),
+        body: JSON.stringify({ key: DATA_KEY, value: { triedFoods: mergedTried, logs: mergedLogs, weekPlan, settings } }),
       });
       onSaved && onSaved();
     } catch (err) {
@@ -1812,8 +1832,14 @@ function AppInner() {
     });
   }, []);
 
+  const isFirstLoad = React.useRef(true);
+
   useEffect(() => {
     if (!loading) {
+      if (isFirstLoad.current) {
+        isFirstLoad.current = false;
+        return; // skip save on the load transition
+      }
       setSaveStatus("saving");
       saveData(triedFoods, logs, weekPlan, settings, () => setSaveStatus("saved"));
     }
