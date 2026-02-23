@@ -758,6 +758,7 @@ const DEFAULT_DATA = {
   ],
   settings: { babyName:"Shannon", babyBirthday:"2025-09-15", startDate:"2026-02-10" },
   weekPlan: null, // built on first load
+  nextWeekPlan: null, // built on first load
 };
 
 async function loadData() {
@@ -779,6 +780,9 @@ async function loadData() {
     } else {
       data.weekPlan = buildDefaultPlan(data.triedFoods || [], getCurrentWeek(data.settings?.startDate || DEFAULT_DATA.settings.startDate));
     }
+    if (!data.nextWeekPlan || typeof data.nextWeekPlan !== 'object') {
+      data.nextWeekPlan = buildDefaultPlan(data.triedFoods || [], getCurrentWeek(data.settings?.startDate || DEFAULT_DATA.settings.startDate) + 1);
+    }
     return { ...DEFAULT_DATA, ...data };
   } catch (err) {
     console.error("loadData error:", err);
@@ -787,16 +791,18 @@ async function loadData() {
 }
 
 function buildDefaults() {
+  const week = getCurrentWeek(DEFAULT_DATA.settings.startDate);
   return {
     ...DEFAULT_DATA,
-    weekPlan: buildDefaultPlan(DEFAULT_DATA.triedFoods, getCurrentWeek(DEFAULT_DATA.settings.startDate))
+    weekPlan: buildDefaultPlan(DEFAULT_DATA.triedFoods, week),
+    nextWeekPlan: buildDefaultPlan(DEFAULT_DATA.triedFoods, week + 1),
   };
 }
 
 // Debounce saves — waits 800ms after last change before writing to Supabase
 // Uses explicit check→PATCH or POST to avoid relying on unique constraint for upsert
 let _saveTimer = null;
-function saveData(triedFoods, logs, weekPlan, settings, onSaved) {
+function saveData(triedFoods, logs, weekPlan, nextWeekPlan, settings, onSaved) {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
     const headers = {
@@ -804,7 +810,7 @@ function saveData(triedFoods, logs, weekPlan, settings, onSaved) {
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       "Content-Type": "application/json",
     };
-    const payload = { value: { triedFoods, logs, weekPlan, settings } };
+    const payload = { value: { triedFoods, logs, weekPlan, nextWeekPlan, settings } };
     try {
       // Check if row already exists
       const checkRes = await fetch(
@@ -972,12 +978,30 @@ function getWeekDateRange(startDate) {
   return `${fmtFull(mon)}–${fmtDay(sun)}`;
 }
 
+function getNextWeekDateRange(startDate) {
+  const start = new Date(startDate);
+  const today = new Date();
+  const daysSinceStart = Math.floor((today - start) / (1000 * 60 * 60 * 24));
+  const weekStart = new Date(start);
+  weekStart.setDate(start.getDate() + Math.floor(daysSinceStart / 7) * 7);
+  const mon = new Date(weekStart);
+  const dow = mon.getDay();
+  const diffToMon = dow === 0 ? -6 : 1 - dow;
+  mon.setDate(mon.getDate() + diffToMon + 7); // +7 for next week
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  const fmtFull = (d) => d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+  const fmtDay  = (d) => d.toLocaleDateString('en-US', { day:'numeric' });
+  return `${fmtFull(mon)}–${fmtDay(sun)}`;
+}
+
 function getTodayLabel() {
   return new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
 }
 
 // Overview tab
-function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMarkTried, onUnmarkTried, onUndoTried, setWeekPlan, ageMonths, startDate, currentWeek }) {
+function OverviewTab({ triedFoods, logs, weekPlan, nextWeekPlan, onLogFood, onCreatePlan, onMarkTried, onUnmarkTried, onUndoTried, setWeekPlan, ageMonths, startDate, currentWeek }) {
+  const [viewNextWeek, setViewNextWeek] = useState(false);
   const [swapTodayFood, setSwapTodayFood] = useState(null);
   const [addToToday, setAddToToday] = useState(false);
   const [swapDay, setSwapDay] = useState(null);
@@ -1030,9 +1054,7 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
           
           if (foodsArray.length === 0) {
             return (
-              <div style={{ padding:20, textAlign:"center" }}>
-                <button onClick={onCreatePlan} style={{ background:C.blue, border:"none", borderRadius:10, color:C.white, fontWeight:700, padding:"10px 20px", cursor:"pointer" }}>✦ Create This Week's Plan</button>
-              </div>
+              <div style={{ padding:"24px 14px", color:C.muted, fontSize:16, fontStyle:"italic", textAlign:"center" }}>Shannon's day off 🧘</div>
             );
           }
           
@@ -1128,12 +1150,16 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
 
       {/* This Week */}
       <div style={{ background:C.white, borderRadius:14, border:`1px solid ${C.border}`, marginBottom:14 }}>
-        <div style={{ padding:"12px 14px 8px", borderBottom:`1px solid ${C.border}` }}>
-          <div style={{ fontWeight:700, fontSize:13, color:C.slateDark }}>This Week · {getWeekDateRange(startDate)}</div>
+        <div style={{ padding:"12px 14px 8px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div style={{ fontWeight:700, fontSize:13, color:C.slateDark }}>{viewNextWeek ? "Next Week" : "This Week"} · {viewNextWeek ? getNextWeekDateRange(startDate) : getWeekDateRange(startDate)}</div>
+          <div style={{ display:"flex", gap:4 }}>
+            <button onClick={() => setViewNextWeek(false)} style={{ background: viewNextWeek ? C.slateLight : C.slateDark, border:`1px solid ${C.slateMid}`, borderRadius:6, padding:"3px 8px", cursor:"pointer", color: viewNextWeek ? C.slate : C.white, fontWeight:700, fontSize:13, lineHeight:1 }}>&#8249;</button>
+            <button onClick={() => setViewNextWeek(true)} style={{ background: viewNextWeek ? C.slateDark : C.slateLight, border:`1px solid ${C.slateMid}`, borderRadius:6, padding:"3px 8px", cursor:"pointer", color: viewNextWeek ? C.white : C.slate, fontWeight:700, fontSize:13, lineHeight:1 }}>&#8250;</button>
+          </div>
         </div>
         <div style={{ display:"flex", padding:"10px 14px", gap:8, overflowX:"auto" }}>
           {DAYS.map((d,i) => {
-            const foods = weekPlan[d] || [];
+            const foods = (viewNextWeek ? nextWeekPlan : weekPlan)[d] || [];
             const isToday = i === TODAY_IDX;
             const firstFood = Array.isArray(foods) ? foods[0] : foods;
             const tried = firstFood && triedFoods.includes(firstFood.id);
@@ -1257,25 +1283,28 @@ function OverviewTab({ triedFoods, logs, weekPlan, onLogFood, onCreatePlan, onMa
 }
 
 // Weekly/Plan tab
-function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, onUnmarkTried, onUndoTried, onCreatePlan, ageMonths, currentWeek }) {
-  const [swapDay, setSwapDay] = useState(null);
-  const [swapFood, setSwapFood] = useState(null);
+function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, nextWeekPlan, setNextWeekPlan, onLogFood, onMarkTried, onUnmarkTried, onUndoTried, onCreatePlan, onCreateNextWeekPlan, ageMonths, currentWeek }) {
+  const [swapDay, setSwapDay] = useState(null); // { week: 'current'|'next', day: 'Mon' }
+  const [swapFood, setSwapFood] = useState(null); // { week, day, food }
   const [showSSRef, setShowSSRef] = useState(false);
   const [addSearch, setAddSearch] = useState("");
   const [swapSearch, setSwapSearch] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState(null); // { day, food }
+  const [confirmDelete, setConfirmDelete] = useState(null); // { week, day, food, idx }
 
-  const handleDeleteFood = (day, foodToDelete, foodIdx) => {
-    setConfirmDelete({ day, food: foodToDelete, idx: foodIdx });
+  const getPlan = (week) => week === 'next' ? nextWeekPlan : weekPlan;
+  const setPlan = (week) => week === 'next' ? setNextWeekPlan : setWeekPlan;
+
+  const handleDeleteFood = (week, day, foodToDelete, foodIdx) => {
+    setConfirmDelete({ week, day, food: foodToDelete, idx: foodIdx });
   };
   const confirmDeleteFood = () => {
     if (!confirmDelete) return;
-    setWeekPlan(p => ({ ...p, [confirmDelete.day]: p[confirmDelete.day].filter((f, i) => i !== confirmDelete.idx) }));
+    setPlan(confirmDelete.week)(p => ({ ...p, [confirmDelete.day]: p[confirmDelete.day].filter((f, i) => i !== confirmDelete.idx) }));
     setConfirmDelete(null);
   };
 
-  const handleSwapFood = (day, oldFood, newFood) => {
-    setWeekPlan(p => ({ ...p, [day]: p[day].map(f => f.id === oldFood.id ? newFood : f) }));
+  const handleSwapFood = (week, day, oldFood, newFood) => {
+    setPlan(week)(p => ({ ...p, [day]: p[day].map(f => f.id === oldFood.id ? newFood : f) }));
   };
 
   const refFoods = SOLID_STARTS_REFERENCE[Math.min(currentWeek, 15)] || [];
@@ -1297,8 +1326,17 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
               if (!window.confirm("Rebuild this week's plan? Your current changes will be replaced.")) return;
             }
             onCreatePlan();
-          }} title="Rebuild Week Plan" style={{ background:C.blue, border:"none", borderRadius:10, color:C.white, fontWeight:700, fontSize:16, padding:"8px 12px", cursor:"pointer" }}>
-            ✦
+          }} title="Rebuild This Week's Plan" style={{ background:C.blue, border:"none", borderRadius:10, color:C.white, fontWeight:700, fontSize:12, padding:"8px 12px", cursor:"pointer" }}>
+            ✦ This Week
+          </button>
+          <button onClick={() => {
+            const hasItems = Object.values(nextWeekPlan).some(d => Array.isArray(d) && d.length > 0);
+            if (hasItems) {
+              if (!window.confirm("Rebuild next week's plan? Your current changes will be replaced.")) return;
+            }
+            onCreateNextWeekPlan();
+          }} title="Rebuild Next Week's Plan" style={{ background:C.slateDark, border:"none", borderRadius:10, color:C.white, fontWeight:700, fontSize:12, padding:"8px 12px", cursor:"pointer" }}>
+            ✦ Next Week
           </button>
         </div>
       </div>
@@ -1346,78 +1384,93 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
         </div>
       )}
 
-      {DAYS.map((d, i) => {
-        const foods = weekPlan[d] || [];
-        const isToday = i === TODAY_IDX;
-        const isWeekend = i >= 5;
+      {/* Helper to render one week's days */}
+      {(['current', 'next']).map(weekType => {
+        const plan = weekType === 'next' ? nextWeekPlan : weekPlan;
+        const weekNum = weekType === 'next' ? currentWeek + 1 : currentWeek;
         return (
-          <div key={d} style={{ background:C.white, borderRadius:14, border:`2px solid ${isToday ? C.blue : C.border}`, marginBottom:10, overflow:"hidden" }}>
-            {/* Day header */}
-            <div style={{ background: isToday ? C.slateDark : C.slateLight, padding:"9px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom:`1px solid ${C.slateMid}` }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <span style={{ fontWeight:700, fontSize:13, color: isToday ? C.white : C.slateDark }}>{DAY_FULL[i]}</span>
-                {isToday && <span style={{ background:C.blue, borderRadius:6, fontSize:10, fontWeight:700, color:C.white, padding:"1px 7px" }}>Today</span>}
-                {isWeekend && <span style={{ background:C.slateLight, border:`1px solid ${C.slateMid}`, borderRadius:6, fontSize:10, fontWeight:600, color:C.muted, padding:"1px 7px" }}>Open — add your own</span>}
+          <div key={weekType}>
+            {/* Week divider */}
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10, marginTop: weekType === 'next' ? 20 : 0 }}>
+              <div style={{ flex:1, height:1, background:C.slateMid }} />
+              <div style={{ fontWeight:800, fontSize:12, color:C.slateDark, padding:"4px 12px", background:weekType === 'next' ? C.slateDark : C.blue, borderRadius:20, color:C.white }}>
+                {weekType === 'current' ? `This Week · Week ${currentWeek}` : `Next Week · Week ${Math.min(weekNum,15)}`}
               </div>
-              <button onClick={() => setSwapDay(swapDay===d?null:d)} style={{ background:"transparent", border:`1px solid ${isToday?'rgba(255,255,255,0.3)':C.slateMid}`, borderRadius:8, padding:"4px 10px", fontSize:11, fontWeight:600, color:isToday?C.white:C.slate, cursor:"pointer" }}>+ Add Food</button>
+              <div style={{ flex:1, height:1, background:C.slateMid }} />
             </div>
 
-            {/* Food rows */}
-            {foods.length === 0 ? (
-              <div style={{ padding:"14px", color:C.muted, fontSize:13 }}>No foods planned</div>
-            ) : foods.map((food, idx) => {
-              const tried = triedFoods.includes(food.id);
+            {DAYS.map((d, i) => {
+              const foods = plan[d] || [];
+              const isToday = weekType === 'current' && i === TODAY_IDX;
+              const isWeekend = i >= 5;
+              const swapKey = weekType + '_' + d;
               return (
-                <div key={`${food.id}-${idx}`} style={{ padding:"12px 14px", borderBottom: idx < foods.length - 1 ? `1px solid ${C.border}` : 'none' }}>
-                  {/* Name row: emoji | name + allergen + tried/mark-button | spacer | + log | swap | delete */}
-                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
-                    <div style={{ fontSize:32, lineHeight:1, flexShrink:0 }}>{food.emoji}</div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                        <span style={{ fontWeight:800, fontSize:14, color:C.charcoal }}>{food.name}</span>
-                        {food.allergen && <span style={{ background:C.goldLight, border:`1px solid ${C.goldMid}`, borderRadius:6, fontSize:10, fontWeight:700, color:C.gold, padding:"1px 6px", flexShrink:0 }}>⚠</span>}
+                <div key={swapKey} style={{ background:C.white, borderRadius:14, border:`2px solid ${isToday ? C.blue : C.border}`, marginBottom:10, overflow:"hidden" }}>
+                  <div style={{ background: isToday ? C.slateDark : C.slateLight, padding:"9px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom:`1px solid ${C.slateMid}` }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ fontWeight:700, fontSize:13, color: isToday ? C.white : C.slateDark }}>{DAY_FULL[i]}</span>
+                      {isToday && <span style={{ background:C.blue, borderRadius:6, fontSize:10, fontWeight:700, color:C.white, padding:"1px 7px" }}>Today</span>}
+                      {isWeekend && <span style={{ background:C.slateLight, border:`1px solid ${C.slateMid}`, borderRadius:6, fontSize:10, fontWeight:600, color:C.muted, padding:"1px 7px" }}>Open — add your own</span>}
+                    </div>
+                    <button onClick={() => setSwapDay(swapDay === swapKey ? null : swapKey)} style={{ background:"transparent", border:`1px solid ${isToday?'rgba(255,255,255,0.3)':C.slateMid}`, borderRadius:8, padding:"4px 10px", fontSize:11, fontWeight:600, color:isToday?C.white:C.slate, cursor:"pointer" }}>+ Add Food</button>
+                  </div>
+
+                  {foods.length === 0 ? (
+                    <div style={{ padding:"14px", color:C.muted, fontSize:13 }}>No foods planned</div>
+                  ) : foods.map((food, idx) => {
+                    const tried = triedFoods.includes(food.id);
+                    return (
+                      <div key={`${food.id}-${idx}`} style={{ padding:"12px 14px", borderBottom: idx < foods.length - 1 ? `1px solid ${C.border}` : 'none' }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+                          <div style={{ fontSize:32, lineHeight:1, flexShrink:0 }}>{food.emoji}</div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+                              <span style={{ fontWeight:800, fontSize:14, color:C.charcoal }}>{food.name}</span>
+                              {food.allergen && <span style={{ background:C.goldLight, border:`1px solid ${C.goldMid}`, borderRadius:6, fontSize:10, fontWeight:700, color:C.gold, padding:"1px 6px", flexShrink:0 }}>⚠</span>}
+                            </div>
+                            {tried
+                              ? <button onClick={() => onUndoTried(food)} style={{ background:C.greenLight, border:`1px solid ${C.greenMid}`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:C.green, cursor:"pointer" }}>✓ Tried</button>
+                              : <button onClick={() => onMarkTried(food)} style={{ background:C.slateLight, border:`1px solid ${C.slateMid}`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:C.slate, cursor:"pointer" }}>Not Tried</button>
+                            }
+                          </div>
+                          <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+                            <button onClick={() => onLogFood(food)} style={{ background:C.blue, border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer", color:C.white, fontWeight:700 }}>Log</button>
+                            <button onClick={() => { setSwapFood({ week: weekType, day: d, food }); setSwapSearch(""); }} style={{ background:C.white, border:`1px solid ${C.slateMid}`, borderRadius:6, padding:"4px 8px", fontSize:13, cursor:"pointer" }}>🔄</button>
+                            <button onClick={() => handleDeleteFood(weekType, d, food, idx)} style={{ background:"transparent", border:`1px solid ${C.redMid}`, borderRadius:6, fontSize:13, color:C.red, cursor:"pointer", padding:"4px 8px" }}>🗑️</button>
+                          </div>
+                        </div>
+                        <div style={{ background:"#FFF8EE", borderRadius:10, padding:"10px 12px", border:`1px solid #F5D87A` }}>
+                          <div style={{ fontSize:10, fontWeight:800, color:"#7A5C00", marginBottom:4, letterSpacing:"0.4px" }}>HOW TO SERVE · {ageMonths} MONTHS</div>
+                          <div style={{ fontSize:12, color:C.charcoal, lineHeight:1.5 }}>{getServingSuggestion(food.id, ageMonths)}</div>
+                        </div>
                       </div>
-                      {tried
-                        ? <button onClick={() => onUndoTried(food)} style={{ background:C.greenLight, border:`1px solid ${C.greenMid}`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:C.green, cursor:"pointer" }}>✓ Tried</button>
-                        : <button onClick={() => onMarkTried(food)} style={{ background:C.slateLight, border:`1px solid ${C.slateMid}`, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:C.slate, cursor:"pointer" }}>Not Tried</button>
-                      }
+                    );
+                  })}
+
+                  {/* Add food panel */}
+                  {swapDay === swapKey && (
+                    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={() => setSwapDay(null)}>
+                      <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:430, maxHeight:"55vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
+                        <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:12 }}>Add Food to {DAY_FULL[i]}</div>
+                        <input type="text" placeholder="Search foods..." value={addSearch} onChange={e => setAddSearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
+                        <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                          {FOODS.filter(f => f.name.toLowerCase().includes(addSearch.toLowerCase())).map(f => (
+                            <button key={f.id} onClick={() => {
+                              const cur = plan[d] || [];
+                              const arr = Array.isArray(cur) ? cur : [cur].filter(Boolean);
+                              setPlan(weekType)(p => ({...p, [d]: [...arr, f]}));
+                              setSwapDay(null); setAddSearch("");
+                            }} style={{ background: triedFoods.includes(f.id) ? C.greenLight : f.allergen ? C.goldLight : C.slateLight, border:`1px solid ${triedFoods.includes(f.id) ? C.greenMid : f.allergen ? C.goldMid : C.slateMid}`, borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", color:C.charcoal }}>
+                              {f.emoji} {f.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ display:"flex", gap:6, flexShrink:0 }}>
-                      <button onClick={() => onLogFood(food)} style={{ background:C.blue, border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer", color:C.white, fontWeight:700 }}>Log</button>
-                      <button onClick={() => { setSwapFood({ day: d, food }); setSwapSearch(""); }} style={{ background:C.white, border:`1px solid ${C.slateMid}`, borderRadius:6, padding:"4px 8px", fontSize:13, cursor:"pointer" }}>🔄</button>
-                      <button onClick={() => handleDeleteFood(d, food, idx)} style={{ background:"transparent", border:`1px solid ${C.redMid}`, borderRadius:6, fontSize:13, color:C.red, cursor:"pointer", padding:"4px 8px" }}>🗑️</button>
-                    </div>
-                  </div>
-                  <div style={{ background:"#FFF8EE", borderRadius:10, padding:"10px 12px", border:`1px solid #F5D87A` }}>
-                    <div style={{ fontSize:10, fontWeight:800, color:"#7A5C00", marginBottom:4, letterSpacing:"0.4px" }}>HOW TO SERVE · {ageMonths} MONTHS</div>
-                    <div style={{ fontSize:12, color:C.charcoal, lineHeight:1.5 }}>{getServingSuggestion(food.id, ageMonths)}</div>
-                  </div>
+                  )}
                 </div>
               );
             })}
-
-            {/* Add food panel */}
-            {swapDay === d && (
-              <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:200, paddingTop:"10vh" }} onClick={() => setSwapDay(null)}>
-                <div style={{ background:C.white, borderRadius:16, padding:24, width:"100%", maxWidth:430, maxHeight:"55vh", overflow:"auto" }} onClick={e => e.stopPropagation()}>
-                  <div style={{ fontWeight:800, fontSize:16, color:C.charcoal, marginBottom:12 }}>Add Food to {DAY_FULL[i]}</div>
-                  <input type="text" placeholder="Search foods..." value={addSearch} onChange={e => setAddSearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
-                  <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-                    {FOODS.filter(f => f.name.toLowerCase().includes(addSearch.toLowerCase())).map(f => (
-                      <button key={f.id} onClick={() => { 
-                        const currentFoods = weekPlan[d] || [];
-                        const foodsArray = Array.isArray(currentFoods) ? currentFoods : [currentFoods].filter(Boolean);
-                        setWeekPlan(p => ({...p, [d]: [...foodsArray, f]}));
-                        setSwapDay(null); setAddSearch("");
-                      }}
-                        style={{ background: triedFoods.includes(f.id) ? C.greenLight : f.allergen ? C.goldLight : C.slateLight, border:`1px solid ${triedFoods.includes(f.id) ? C.greenMid : f.allergen ? C.goldMid : C.slateMid}`, borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", color:C.charcoal }}>
-                        {f.emoji} {f.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         );
       })}
@@ -1431,11 +1484,10 @@ function WeeklyTab({ triedFoods, weekPlan, setWeekPlan, onLogFood, onMarkTried, 
             <input type="text" placeholder="Search foods..." value={swapSearch} onChange={e => setSwapSearch(e.target.value)} autoFocus style={{ width:"100%", borderRadius:10, border:`1px solid ${C.border}`, padding:"10px 12px", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", outline:"none", marginBottom:12 }} />
             <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
               {FOODS.filter(f => f.name.toLowerCase().includes(swapSearch.toLowerCase())).map(f => (
-                <button key={f.id} onClick={() => { 
-                  handleSwapFood(swapFood.day, swapFood.food, f);
+                <button key={f.id} onClick={() => {
+                  handleSwapFood(swapFood.week, swapFood.day, swapFood.food, f);
                   setSwapFood(null); setSwapSearch("");
-                }}
-                  style={{ background: triedFoods.includes(f.id) ? C.greenLight : f.allergen ? C.goldLight : C.slateLight, border:`1px solid ${triedFoods.includes(f.id) ? C.greenMid : f.allergen ? C.goldMid : C.slateMid}`, borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", color:C.charcoal }}>
+                }} style={{ background: triedFoods.includes(f.id) ? C.greenLight : f.allergen ? C.goldLight : C.slateLight, border:`1px solid ${triedFoods.includes(f.id) ? C.greenMid : f.allergen ? C.goldMid : C.slateMid}`, borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", color:C.charcoal }}>
                   {f.emoji} {f.name}
                 </button>
               ))}
@@ -1808,6 +1860,7 @@ function AppInner() {
   ]);
   const [settings, setSettings] = useState({ babyName: "Shannon", babyBirthday: "2025-09-15", startDate: "2026-02-10" });
   const [weekPlan, setWeekPlan] = useState(() => buildDefaultPlan(["peanut"], 1));
+  const [nextWeekPlan, setNextWeekPlan] = useState(() => buildDefaultPlan(["peanut"], 2));
   const [logTarget, setLogTarget] = useState(null);
   const [quickLogSearch, setQuickLogSearch] = useState("");
   const [undoTarget, setUndoTarget] = useState(null);
@@ -1824,6 +1877,7 @@ function AppInner() {
       setTriedFoods(Array.isArray(data.triedFoods) ? data.triedFoods : []);
       setLogs(Array.isArray(data.logs) ? data.logs : []);
       setWeekPlan(data.weekPlan && typeof data.weekPlan === 'object' ? data.weekPlan : buildDefaultPlan([], 1));
+      setNextWeekPlan(data.nextWeekPlan && typeof data.nextWeekPlan === 'object' ? data.nextWeekPlan : buildDefaultPlan([], 2));
       setSettings(data.settings && data.settings.babyName ? data.settings : DEFAULT_DATA.settings);
       setLoading(false);
     }).catch(() => {
@@ -1840,13 +1894,14 @@ function AppInner() {
         return; // skip save on the load transition
       }
       setSaveStatus("saving");
-      saveData(triedFoods, logs, weekPlan, settings, () => setSaveStatus("saved"));
+      saveData(triedFoods, logs, weekPlan, nextWeekPlan, settings, () => setSaveStatus("saved"));
     }
-  }, [triedFoods, logs, weekPlan, settings, loading]);
+  }, [triedFoods, logs, weekPlan, nextWeekPlan, settings, loading]);
 
   const handleToggle = id => setTriedFoods(prev => prev.includes(id) ? prev.filter(x => x!==id) : [...prev, id]);
   const handleUnmarkTried = id => setTriedFoods(prev => prev.filter(x => x!==id));
   const handleCreatePlan = () => setWeekPlan(buildDefaultPlan(triedFoods, currentWeek));
+  const handleCreateNextWeekPlan = () => setNextWeekPlan(buildDefaultPlan(triedFoods, currentWeek + 1));
 
   const handleDeleteLog = (logIdx) => {
     const deletedLog = logs[logIdx];
@@ -1901,7 +1956,7 @@ function AppInner() {
 
   const tabs = [
     { id:"overview", label:"Overview", icon:"🏠" },
-    { id:"weekly",   label:"Plan",     icon:"📅" },
+    { id:"weekly",   label:"Menu",     icon:"📅" },
     { id:"library",  label:"Library",  icon:"📚" },
     { id:"allergens",label:"Allergens",icon:"⚠️" },
   ];
@@ -1943,8 +1998,8 @@ function AppInner() {
 
       {/* Content */}
       <div style={{ padding:"16px 14px 0" }}>
-        {tab==="overview"  && <OverviewTab  triedFoods={triedFoods} logs={logs} weekPlan={weekPlan} onLogFood={handleLogFood} onCreatePlan={handleCreatePlan} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} onUndoTried={handleUndoTried} setWeekPlan={setWeekPlan} ageMonths={ageMonths} startDate={settings.startDate} currentWeek={currentWeek} />}
-        {tab==="weekly"    && <WeeklyTab    triedFoods={triedFoods} weekPlan={weekPlan} setWeekPlan={setWeekPlan} onLogFood={handleLogFood} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} onUndoTried={handleUndoTried} onCreatePlan={handleCreatePlan} ageMonths={ageMonths} currentWeek={currentWeek} />}
+        {tab==="overview"  && <OverviewTab  triedFoods={triedFoods} logs={logs} weekPlan={weekPlan} nextWeekPlan={nextWeekPlan} onLogFood={handleLogFood} onCreatePlan={handleCreatePlan} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} onUndoTried={handleUndoTried} setWeekPlan={setWeekPlan} ageMonths={ageMonths} startDate={settings.startDate} currentWeek={currentWeek} />}
+        {tab==="weekly"    && <WeeklyTab    triedFoods={triedFoods} weekPlan={weekPlan} setWeekPlan={setWeekPlan} nextWeekPlan={nextWeekPlan} setNextWeekPlan={setNextWeekPlan} onLogFood={handleLogFood} onMarkTried={handleMarkTried} onUnmarkTried={handleUnmarkTried} onUndoTried={handleUndoTried} onCreatePlan={handleCreatePlan} onCreateNextWeekPlan={handleCreateNextWeekPlan} ageMonths={ageMonths} currentWeek={currentWeek} />}
         {tab==="library"   && <LibraryTab   triedFoods={triedFoods} logs={logs} onToggle={handleToggle} onLogFood={handleLogFood} />}
         {tab==="allergens" && <AllergensTab triedFoods={triedFoods} logs={logs} onToggle={handleToggle} onLogFood={handleLogFood} onDeleteLog={handleDeleteLog} />}
       </div>
